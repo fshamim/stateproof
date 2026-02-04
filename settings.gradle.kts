@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 }
 
 include(":stateproof-core")
+include(":stateproof-navigation")
