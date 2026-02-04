@@ -242,7 +242,7 @@ class StateMachine<STATE : Any, EVENT : Any>(
     private val transitionLog = mutableListOf<String>()
 
     private fun logTransition(currentState: String?, eventName: String?, targetState: String?) {
-        transitionLog.add("%s_%s_%s".format(currentState, eventName, targetState))
+        transitionLog.add("${currentState}_${eventName}_${targetState}")
     }
 
     /**
@@ -259,6 +259,15 @@ class StateMachine<STATE : Any, EVENT : Any>(
     fun clearTransitionLog() {
         transitionLog.clear()
     }
+    // endregion
+
+    // region Test Generation
+
+    /**
+     * Returns the underlying state machine graph for introspection.
+     */
+    fun getGraph(): SMGraph<STATE, EVENT> = graph
+
     // endregion
 
     companion object {
@@ -330,15 +339,15 @@ class StateMachine<STATE : Any, EVENT : Any>(
 
             stateMachineInfo.onEachIndexed { index, (state, stateInfo) ->
                 if (index == 0) {
-                    builder.append("initialState(%s)\n".format(state))
+                    builder.append("initialState($state)\n")
                 }
-                builder.append("state<%s.%s>{\n".format(stateSealedClassName, state))
+                builder.append("state<$stateSealedClassName.$state>{\n")
                 stateInfo.transitions.forEach { (event, toState) ->
-                    builder.append("\ton<%s.%s>{\n".format(eventSealedClassName, event))
-                    builder.append("\t\ttransitionTo(%s.%s)".format(stateSealedClassName, toState))
+                    builder.append("\ton<$eventSealedClassName.$event>{\n")
+                    builder.append("\t\ttransitionTo($stateSealedClassName.$toState)")
                     if (stateInfo.sideEffect.isNotEmpty()) {
                         builder.append("{\n")
-                        builder.append("\t\t\t%s\n".format(stateInfo.sideEffect))
+                        builder.append("\t\t\t${stateInfo.sideEffect}\n")
                         builder.append("\t\t}\n")
                     } else {
                         builder.append("\n")

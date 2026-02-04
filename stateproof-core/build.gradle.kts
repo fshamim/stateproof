@@ -1,6 +1,10 @@
 plugins {
     kotlin("multiplatform")
+    `maven-publish`
 }
+
+group = "io.stateproof"
+version = "0.1.0-SNAPSHOT"
 
 kotlin {
     // JVM target (primary)
@@ -48,6 +52,10 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+        }
+
+        jvmMain.dependencies {
+            implementation(kotlin("reflect"))
         }
 
         jvmTest.dependencies {
