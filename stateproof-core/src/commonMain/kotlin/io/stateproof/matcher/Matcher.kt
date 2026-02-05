@@ -12,6 +12,12 @@ import kotlin.reflect.KClass
  */
 class Matcher<T : Any, out R : T> private constructor(private val kClass: KClass<R>) {
 
+    /**
+     * The KClass that this matcher matches against.
+     * Used for introspection and graph analysis.
+     */
+    val matchedClass: KClass<out T> get() = kClass
+
     private val predicates = mutableListOf<(T) -> Boolean>({ kClass.isInstance(it) })
 
     /**

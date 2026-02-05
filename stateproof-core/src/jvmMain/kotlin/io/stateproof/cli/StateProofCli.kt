@@ -90,6 +90,7 @@ object StateProofCli {
             |  --provider <fqn>         State machine info provider (required for generate/sync/status)
             |                           Format: com.package.ClassName#methodName
             |                           For top-level Kotlin functions: com.package.FileKt#functionName
+            |  --is-factory              Provider is a factory (returns StateMachine, auto-extracts StateInfo)
             |  --initial-state <name>   Initial state name (default: "Initial")
             |  --max-visits <n>         Max visits per state during enumeration (default: 2)
             |  --max-depth <n>          Max path depth, -1 for unlimited (default: -1)
@@ -138,6 +139,7 @@ object StateProofCli {
 
     private fun runGenerate(args: List<String>) {
         val provider = args.requireArg("--provider")
+        val isFactory = args.contains("--is-factory")
         val initialState = args.getArgValue("--initial-state") ?: "Initial"
         val outputDir = args.getArgValue("--output-dir")
         val outputFile = args.getArgValue("--output-file")
@@ -156,10 +158,11 @@ object StateProofCli {
 
         val additionalImports = importsStr?.split(",")?.map { it.trim() } ?: emptyList()
 
-        println("=" .repeat(60))
+        println("=".repeat(60))
         println("StateProof Generate")
         println("=".repeat(60))
         println("Provider: $provider")
+        println("Provider mode: ${if (isFactory) "factory" else "info provider"}")
         println("Initial state: $initialState")
         println("Max visits per state: $maxVisits")
         println("Max depth: ${if (maxDepth == -1) "unlimited" else maxDepth}")
@@ -167,7 +170,11 @@ object StateProofCli {
 
         // Load state info
         println("Loading state machine info...")
-        val stateInfoMap = StateInfoLoader.load(provider)
+        val stateInfoMap = if (isFactory) {
+            StateInfoLoader.loadFromFactory(provider)
+        } else {
+            StateInfoLoader.load(provider)
+        }
         println("Loaded ${stateInfoMap.size} states")
         println()
 
@@ -232,6 +239,7 @@ object StateProofCli {
 
     private fun runSync(args: List<String>) {
         val provider = args.requireArg("--provider")
+        val isFactory = args.contains("--is-factory")
         val initialState = args.getArgValue("--initial-state") ?: "Initial"
         val testDir = args.getArgValue("--test-dir")
         val testFile = args.getArgValue("--test-file")
@@ -250,6 +258,7 @@ object StateProofCli {
         println("StateProof Sync ${if (dryRun) "(DRY RUN)" else ""}")
         println("=".repeat(60))
         println("Provider: $provider")
+        println("Provider mode: ${if (isFactory) "factory" else "info provider"}")
         println("Initial state: $initialState")
         println("Preserve user code: $preserveUserCode")
         println("Auto-delete obsolete: $autoDeleteObsolete")
@@ -257,7 +266,11 @@ object StateProofCli {
 
         // Load state info
         println("Loading state machine info...")
-        val stateInfoMap = StateInfoLoader.load(provider)
+        val stateInfoMap = if (isFactory) {
+            StateInfoLoader.loadFromFactory(provider)
+        } else {
+            StateInfoLoader.load(provider)
+        }
         println("Loaded ${stateInfoMap.size} states")
         println()
 

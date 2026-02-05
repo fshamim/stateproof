@@ -36,19 +36,55 @@ abstract class StateProofBaseTask : DefaultTask() {
     @get:Optional
     abstract val classpathConfiguration: Property<String>
 
+    /**
+     * Whether the stateMachineInfoProvider is a factory function (returns StateMachine)
+     * or a legacy info provider (returns Map<String, StateInfo>).
+     */
+    @get:Input
+    abstract val providerIsFactory: Property<Boolean>
+
     @get:OutputFile
     abstract val reportFile: RegularFileProperty
 
     /**
-     * Configures common properties from the extension.
+     * Configures common properties from the extension (single-SM mode).
      */
     open fun configureFrom(extension: StateProofExtension) {
-        stateMachineInfoProvider.set(extension.stateMachineInfoProvider)
+        val (providerFqn, isFactoryMode) = if (extension.isSingleMode()) {
+            extension.getSingleModeProvider()
+        } else {
+            // If in multi-mode but configureFrom is called, use first SM or error
+            throw org.gradle.api.GradleException(
+                "Cannot use configureFrom(extension) in multi-SM mode. " +
+                    "Use configureFromStateMachineConfig() instead."
+            )
+        }
+
+        stateMachineInfoProvider.set(providerFqn)
+        providerIsFactory.set(isFactoryMode)
         initialState.set(extension.initialState)
         maxVisitsPerState.set(extension.maxVisitsPerState)
         maxPathDepth.set(extension.maxPathDepth)
         classpathConfiguration.set(extension.classpathConfiguration)
         reportFile.set(extension.reportFile)
+    }
+
+    /**
+     * Configures common properties from a StateMachineConfig (multi-SM mode).
+     */
+    open fun configureFromStateMachineConfig(config: StateMachineConfig, extension: StateProofExtension) {
+        val (providerFqn, isFactoryMode) = config.getEffectiveProvider()
+
+        stateMachineInfoProvider.set(providerFqn)
+        providerIsFactory.set(isFactoryMode)
+        initialState.set(config.initialState)
+        maxVisitsPerState.set(config.maxVisitsPerState)
+        maxPathDepth.set(config.maxPathDepth)
+        classpathConfiguration.set(extension.classpathConfiguration)
+        // Per-SM report file - use fileValue to get proper RegularFile type
+        reportFile.fileValue(
+            extension.reportFile.get().asFile.parentFile.resolve("${config.name}-sync-report.txt")
+        )
     }
 
     /**

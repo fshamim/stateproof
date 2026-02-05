@@ -50,13 +50,36 @@ abstract class StateProofGenerateTask : StateProofBaseTask() {
         additionalImports.set(extension.additionalImports)
     }
 
+    override fun configureFromStateMachineConfig(config: StateMachineConfig, extension: StateProofExtension) {
+        super.configureFromStateMachineConfig(config, extension)
+        
+        // Use effective methods that derive from provider FQN if not explicitly set
+        val effectivePackage = config.getEffectivePackage()
+        testPackage.set(effectivePackage)
+        testClassName.set(config.getEffectiveClassName())
+        
+        // Compute test directory from package if not explicitly set
+        // Default: src/test/kotlin/<package-as-path>
+        if (!config.testDir.isPresent) {
+            val packagePath = effectivePackage.replace('.', '/')
+            testDir.set(project.layout.projectDirectory.dir("src/test/kotlin/$packagePath"))
+        } else {
+            testDir.set(config.testDir)
+        }
+        
+        stateMachineFactory.set(config.stateMachineFactory)
+        eventClassPrefix.set(config.eventClassPrefix)
+        additionalImports.set(config.additionalImports)
+    }
+
     @TaskAction
     fun generate() {
         val provider = stateMachineInfoProvider.get()
         if (provider.isBlank()) {
             throw org.gradle.api.GradleException(
-                "stateMachineInfoProvider must be set in the stateproof extension. " +
-                    "Example: stateMachineInfoProvider.set(\"com.example.MainStateMachineKt#getMainStateMachineInfo\")"
+                "State machine provider must be set. Either:\n" +
+                    "1. Set stateproof.stateMachineFactoryFqn or stateproof.stateMachineInfoProvider\n" +
+                    "2. Use stateproof.stateMachines { create(\"name\") { factory.set(...) } }"
             )
         }
 
@@ -75,6 +98,11 @@ abstract class StateProofGenerateTask : StateProofBaseTask() {
             "--report", reportFile.get().asFile.absolutePath,
         )
 
+        // Pass --is-factory flag if using factory mode (auto-extracts StateInfo)
+        if (providerIsFactory.get()) {
+            args.add("--is-factory")
+        }
+
         val imports = additionalImports.get()
         if (imports.isNotEmpty()) {
             args.addAll(listOf("--imports", imports.joinToString(",")))
@@ -83,3 +111,4 @@ abstract class StateProofGenerateTask : StateProofBaseTask() {
         executeCli("generate", *args.toTypedArray())
     }
 }
+

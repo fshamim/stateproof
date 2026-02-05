@@ -1,5 +1,6 @@
 package io.stateproof.gradle
 
+import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.Project
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
@@ -9,60 +10,91 @@ import org.gradle.api.provider.Property
 /**
  * Extension for configuring the StateProof Gradle plugin.
  *
- * Example usage in build.gradle.kts:
+ * Supports two configuration modes:
+ *
+ * ## Mode 1: Single State Machine (Simple)
  * ```kotlin
  * stateproof {
- *     // State machine info provider (REQUIRED)
- *     // For top-level Kotlin functions:
- *     stateMachineInfoProvider.set("com.example.MainStateMachineKt#getMainStateMachineInfo")
- *     // For class companion/static methods:
- *     // stateMachineInfoProvider.set("com.example.MyStateMachine#getStateMachineInfo")
+ *     // Use factory (recommended - auto-extracts StateInfo)
+ *     stateMachineFactory.set("com.example.MainStateMachineKt#getMainStateMachine")
+ *     // Or legacy info provider
+ *     // stateMachineInfoProvider.set("com.example.MainStateMachineKt#getMainStateMachineInfo")
  *
- *     // Initial state name
  *     initialState.set("Initial")
- *
- *     // Test generation settings
  *     testDir.set(file("src/test/kotlin/generated/stateproof"))
- *     maxVisitsPerState.set(2)
- *     maxPathDepth.set(-1)  // -1 = unlimited
- *
- *     // Code generation settings
  *     testPackage.set("com.example.test")
  *     testClassName.set("GeneratedMainStateMachineTest")
- *     stateMachineFactory.set("createTestStateMachine()")
- *     eventClassPrefix.set("Events")
- *     additionalImports.set(listOf(
- *         "com.example.States",
- *         "com.example.Events",
- *     ))
+ * }
+ * ```
  *
- *     // Sync settings
- *     preserveUserCode.set(true)
- *     autoDeleteObsolete.set(false)
- *
- *     // Report output
- *     reportFile.set(file("build/stateproof/sync-report.txt"))
- *
- *     // Classpath configuration name (default: auto-detect)
- *     // For Android projects, you may need to set this:
- *     // classpathConfiguration.set("debugUnitTestRuntimeClasspath")
+ * ## Mode 2: Multiple State Machines
+ * ```kotlin
+ * stateproof {
+ *     stateMachines {
+ *         create("main") {
+ *             factory.set("com.example.MainStateMachineKt#getMainStateMachine")
+ *             initialState.set("Initial")
+ *             testDir.set(file("src/test/kotlin/generated/main"))
+ *             testClassName.set("GeneratedMainStateMachineTest")
+ *             stateMachineFactory.set("createTestStateMachine()")
+ *         }
+ *         create("laser") {
+ *             factory.set("com.example.LaserSensorKt#getLaserSensorStateMachine")
+ *             initialState.set("Idle")
+ *             testDir.set(file("src/test/kotlin/generated/laser"))
+ *             testClassName.set("GeneratedLaserSensorTest")
+ *         }
+ *     }
  * }
  * ```
  */
-abstract class StateProofExtension(project: Project) {
+abstract class StateProofExtension(private val project: Project) {
 
     /**
-     * Fully qualified state machine info provider function.
+     * Container for multiple state machine configurations.
+     *
+     * Use this when you have multiple state machines in your project.
+     * Each state machine gets its own test generation and sync configuration.
+     */
+    val stateMachines: NamedDomainObjectContainer<StateMachineConfig> =
+        project.container(StateMachineConfig::class.java) { name ->
+            project.objects.newInstance(StateMachineConfig::class.java, name).apply {
+                // Set defaults for each state machine config
+                initialState.convention("Initial")
+                // NOTE: testDir is NOT set here - it will be derived from the provider package
+                // in the task configuration (StateProofGenerateTask.configureFromStateMachineConfig)
+                maxVisitsPerState.convention(2)
+                maxPathDepth.convention(-1)
+                testPackage.convention("")
+                testClassName.convention("")  // Will be derived from provider method name
+                stateMachineFactory.convention("create${name.replaceFirstChar { it.uppercase() }}StateMachine()")
+                eventClassPrefix.convention("Events")
+                additionalImports.convention(emptyList<String>())
+            }
+        }
+
+    // =====================================================================
+    // Single State Machine Properties (backward compatibility)
+    // =====================================================================
+
+    /**
+     * Factory function that returns a StateMachine instance (RECOMMENDED).
      *
      * Format: "com.package.ClassName#methodName"
      *
-     * For top-level Kotlin functions in file MainStateMachine.kt in package com.example.main:
-     *   "com.example.main.MainStateMachineKt#getMainStateMachineInfo"
+     * The function must take no parameters and return StateMachine<*, *>.
+     * StateInfo will be extracted automatically using StateMachine.toStateInfo().
+     */
+    abstract val stateMachineFactoryFqn: Property<String>
+
+    /**
+     * Fully qualified state machine info provider function (LEGACY).
      *
-     * For class companion/static methods:
-     *   "com.example.MyStateMachine#getStateMachineInfo"
+     * Format: "com.package.ClassName#methodName"
      *
      * The function must take no parameters and return Map<String, StateInfo>.
+     *
+     * Use `stateMachineFactoryFqn` instead for new projects.
      */
     abstract val stateMachineInfoProvider: Property<String>
 
@@ -163,7 +195,9 @@ abstract class StateProofExtension(project: Project) {
     abstract val classpathConfiguration: Property<String>
 
     init {
-        // Set defaults
+        // Set defaults for single-SM mode (backward compatibility)
+        stateMachineFactoryFqn.convention("")
+        stateMachineInfoProvider.convention("")
         initialState.convention("Initial")
         testDir.convention(project.layout.projectDirectory.dir("src/test/kotlin/generated/stateproof"))
         maxVisitsPerState.convention(2)
@@ -179,4 +213,47 @@ abstract class StateProofExtension(project: Project) {
         dryRun.convention(false)
         classpathConfiguration.convention("")
     }
+
+    /**
+     * Returns true if multi-SM mode is configured (stateMachines container has entries).
+     */
+    fun isMultiMode(): Boolean = stateMachines.isNotEmpty()
+
+    /**
+     * Returns true if single-SM mode is configured (legacy properties are set).
+     */
+    fun isSingleMode(): Boolean {
+        val hasFactory = stateMachineFactoryFqn.orNull?.isNotBlank() == true
+        val hasProvider = stateMachineInfoProvider.orNull?.isNotBlank() == true
+        return hasFactory || hasProvider
+    }
+
+    /**
+     * Gets the effective provider for single-SM mode.
+     * Returns Pair<providerFqn, isFactory> where isFactory=true means it's a factory function.
+     */
+    fun getSingleModeProvider(): Pair<String, Boolean> {
+        val factoryFqn = stateMachineFactoryFqn.orNull
+        val infoProviderFqn = stateMachineInfoProvider.orNull
+
+        if (!factoryFqn.isNullOrBlank()) {
+            return factoryFqn to true
+        }
+        if (!infoProviderFqn.isNullOrBlank()) {
+            return infoProviderFqn to false
+        }
+        throw org.gradle.api.GradleException(
+            "No state machine configuration found. Either:\n" +
+                "1. Set stateproof.stateMachineFactoryFqn or stateproof.stateMachineInfoProvider for single-SM mode\n" +
+                "2. Use stateproof.stateMachines { create(\"name\") { ... } } for multi-SM mode"
+        )
+    }
+
+    /**
+     * Configures the stateMachines container using a DSL-style action.
+     */
+    fun stateMachines(action: org.gradle.api.Action<NamedDomainObjectContainer<StateMachineConfig>>) {
+        action.execute(stateMachines)
+    }
 }
+

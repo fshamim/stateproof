@@ -41,12 +41,31 @@ abstract class StateProofSyncTask : StateProofBaseTask() {
         autoDeleteObsolete.set(extension.autoDeleteObsolete)
     }
 
+    override fun configureFromStateMachineConfig(config: StateMachineConfig, extension: StateProofExtension) {
+        super.configureFromStateMachineConfig(config, extension)
+        
+        // Compute test directory from package if not explicitly set
+        // Default: src/test/kotlin/<package-as-path>
+        if (!config.testDir.isPresent) {
+            val effectivePackage = config.getEffectivePackage()
+            val packagePath = effectivePackage.replace('.', '/')
+            testDir.set(project.layout.projectDirectory.dir("src/test/kotlin/$packagePath"))
+        } else {
+            testDir.set(config.testDir)
+        }
+        
+        preserveUserCode.set(extension.preserveUserCode)
+        autoDeleteObsolete.set(extension.autoDeleteObsolete)
+    }
+
     @TaskAction
     fun sync() {
         val provider = stateMachineInfoProvider.get()
         if (provider.isBlank()) {
             throw org.gradle.api.GradleException(
-                "stateMachineInfoProvider must be set in the stateproof extension."
+                "State machine provider must be set. Either:\n" +
+                    "1. Set stateproof.stateMachineFactoryFqn or stateproof.stateMachineInfoProvider\n" +
+                    "2. Use stateproof.stateMachines { create(\"name\") { factory.set(...) } }"
             )
         }
 
@@ -54,6 +73,11 @@ abstract class StateProofSyncTask : StateProofBaseTask() {
             "--test-dir", testDir.get().asFile.absolutePath,
             "--report", reportFile.get().asFile.absolutePath,
         )
+
+        // Pass --is-factory flag if using factory mode (auto-extracts StateInfo)
+        if (providerIsFactory.get()) {
+            args.add("--is-factory")
+        }
 
         if (dryRunMode.get()) {
             args.add("--dry-run")
@@ -70,3 +94,4 @@ abstract class StateProofSyncTask : StateProofBaseTask() {
         executeCli("sync", *args.toTypedArray())
     }
 }
+
