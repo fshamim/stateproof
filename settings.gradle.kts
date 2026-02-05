@@ -16,4 +16,6 @@ dependencyResolutionManagement {
 }
 
 include(":stateproof-core")
+include(":stateproof-compose")
 include(":stateproof-navigation")
+include(":stateproof-gradle-plugin")

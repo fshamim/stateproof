@@ -11,22 +11,35 @@ import java.io.File
 import java.time.Instant
 
 /**
- * Command-line interface for StateProof sync operations.
+ * Command-line interface for StateProof test generation and sync.
  *
  * Usage:
  * ```
- * java -jar stateproof.jar sync --state-info <file> --test-dir <dir> [--dry-run]
- * java -jar stateproof.jar generate --state-info <file> --output <file>
- * java -jar stateproof.jar clean-obsolete --test-dir <dir>
- * ```
+ * # Generate tests from a state machine info provider
+ * java -cp <classpath> io.stateproof.cli.StateProofCli generate \
+ *   --provider com.example.MainStateMachineKt#getMainStateMachineInfo \
+ *   --initial-state Initial \
+ *   --output-dir src/test/kotlin/generated \
+ *   --package com.example.test \
+ *   --class-name GeneratedMainStateMachineTest
  *
- * For Gradle integration, add to your build.gradle.kts:
- * ```kotlin
- * tasks.register<JavaExec>("stateproofSync") {
- *     classpath = sourceSets["main"].runtimeClasspath
- *     mainClass.set("io.stateproof.cli.StateProofCli")
- *     args("sync", "--state-info", "build/stateproof/state-info.json", "--test-dir", "src/test/kotlin")
- * }
+ * # Sync existing tests with current state machine
+ * java -cp <classpath> io.stateproof.cli.StateProofCli sync \
+ *   --provider com.example.MainStateMachineKt#getMainStateMachineInfo \
+ *   --initial-state Initial \
+ *   --test-dir src/test/kotlin/generated
+ *
+ * # Dry run (preview changes without writing)
+ * java -cp <classpath> io.stateproof.cli.StateProofCli sync \
+ *   --provider ... --test-dir ... --dry-run
+ *
+ * # Show status
+ * java -cp <classpath> io.stateproof.cli.StateProofCli status \
+ *   --provider ... --test-dir ...
+ *
+ * # Clean obsolete tests
+ * java -cp <classpath> io.stateproof.cli.StateProofCli clean-obsolete \
+ *   --test-dir src/test/kotlin/generated --auto-delete
  * ```
  */
 object StateProofCli {
@@ -38,160 +51,349 @@ object StateProofCli {
             return
         }
 
-        when (args[0]) {
-            "sync" -> runSync(args.drop(1))
-            "sync-dry-run" -> runSync(args.drop(1), dryRun = true)
-            "generate" -> runGenerate(args.drop(1))
-            "clean-obsolete" -> runCleanObsolete(args.drop(1))
-            "help", "--help", "-h" -> printUsage()
-            else -> {
-                println("Unknown command: ${args[0]}")
-                printUsage()
+        try {
+            when (args[0]) {
+                "generate" -> runGenerate(args.drop(1))
+                "sync" -> runSync(args.drop(1))
+                "status" -> runStatus(args.drop(1))
+                "clean-obsolete" -> runCleanObsolete(args.drop(1))
+                "help", "--help", "-h" -> printUsage()
+                else -> {
+                    System.err.println("Unknown command: ${args[0]}")
+                    printUsage()
+                    System.exit(1)
+                }
             }
+        } catch (e: Exception) {
+            System.err.println("ERROR: ${e.message}")
+            if (System.getenv("STATEPROOF_DEBUG") != null) {
+                e.printStackTrace()
+            }
+            System.exit(1)
         }
     }
 
     private fun printUsage() {
         println("""
-            |StateProof CLI - Test Sync & Generation
+            |StateProof CLI - State Machine Test Generation & Sync
             |
             |Usage: stateproof <command> [options]
             |
             |Commands:
-            |  sync              Sync tests with current state machine
-            |  sync-dry-run     Preview sync changes without writing
-            |  generate         Generate new test file
-            |  clean-obsolete   Interactive cleanup of obsolete tests
+            |  generate         Generate test file from state machine
+            |  sync             Sync existing tests with current state machine
+            |  status           Show sync status without modifying files
+            |  clean-obsolete   Remove obsolete tests
             |  help             Show this help message
             |
-            |Sync Options:
-            |  --test-dir <dir>       Directory containing test files (required)
-            |  --test-file <file>     Single test file to sync (alternative to --test-dir)
-            |  --initial-state <name> Initial state name (default: "Initial")
-            |  --output-report <file> Write sync report to file
+            |Common Options:
+            |  --provider <fqn>         State machine info provider (required for generate/sync/status)
+            |                           Format: com.package.ClassName#methodName
+            |                           For top-level Kotlin functions: com.package.FileKt#functionName
+            |  --initial-state <name>   Initial state name (default: "Initial")
+            |  --max-visits <n>         Max visits per state during enumeration (default: 2)
+            |  --max-depth <n>          Max path depth, -1 for unlimited (default: -1)
             |
             |Generate Options:
-            |  --output <file>        Output test file path (required)
-            |  --package <name>       Package name for generated tests
-            |  --class-name <name>    Test class name
-            |  --initial-state <name> Initial state name (default: "Initial")
+            |  --output-dir <dir>       Output directory for generated test file (required)
+            |  --output-file <file>     Exact output file path (alternative to --output-dir)
+            |  --package <name>         Package name for generated tests (required)
+            |  --class-name <name>      Test class name (default: GeneratedStateMachineTest)
+            |  --factory <expr>         State machine factory expression (default: createStateMachine())
+            |  --event-prefix <name>    Event class prefix (default: Events)
+            |  --imports <list>         Comma-separated additional imports
             |
-            |Note: State machine info must be provided programmatically.
-            |See documentation for integration examples.
+            |Sync Options:
+            |  --test-dir <dir>         Directory containing test files (required)
+            |  --test-file <file>       Single test file to sync (alternative to --test-dir)
+            |  --dry-run                Preview changes without writing files
+            |  --preserve-user-code     Preserve user code during sync (default: true)
+            |  --auto-delete-obsolete   Automatically delete obsolete tests (default: false)
+            |  --report <file>          Write sync report to file
+            |
+            |Clean Obsolete Options:
+            |  --test-dir <dir>         Directory containing test files (required)
+            |  --auto-delete            Delete without confirmation
+            |
+            |Examples:
+            |  # Generate tests for iCages MainStateMachine
+            |  stateproof generate \
+            |    --provider com.mubea.icages.main.MainStateMachineKt#getMainStateMachineInfo \
+            |    --initial-state Initial \
+            |    --output-dir src/test/kotlin/generated \
+            |    --package com.mubea.icages \
+            |    --class-name GeneratedMainStateMachineTest
+            |
+            |  # Sync existing tests
+            |  stateproof sync \
+            |    --provider com.mubea.icages.main.MainStateMachineKt#getMainStateMachineInfo \
+            |    --initial-state Initial \
+            |    --test-dir src/test/kotlin/generated
         """.trimMargin())
     }
 
-    /**
-     * Run sync operation with the given arguments.
-     *
-     * Note: In a real implementation, the stateInfoMap would be loaded from the
-     * compiled state machine. For now, this serves as a template.
-     */
-    private fun runSync(args: List<String>, dryRun: Boolean = false) {
+    // ========================================================================
+    // GENERATE command
+    // ========================================================================
+
+    private fun runGenerate(args: List<String>) {
+        val provider = args.requireArg("--provider")
+        val initialState = args.getArgValue("--initial-state") ?: "Initial"
+        val outputDir = args.getArgValue("--output-dir")
+        val outputFile = args.getArgValue("--output-file")
+        val packageName = args.requireArg("--package")
+        val className = args.getArgValue("--class-name") ?: "GeneratedStateMachineTest"
+        val factory = args.getArgValue("--factory") ?: "createStateMachine()"
+        val eventPrefix = args.getArgValue("--event-prefix") ?: "Events"
+        val importsStr = args.getArgValue("--imports")
+        val maxVisits = args.getArgValue("--max-visits")?.toIntOrNull() ?: 2
+        val maxDepth = args.getArgValue("--max-depth")?.toIntOrNull() ?: -1
+        val reportPath = args.getArgValue("--report")
+
+        if (outputDir == null && outputFile == null) {
+            throw IllegalArgumentException("--output-dir or --output-file required")
+        }
+
+        val additionalImports = importsStr?.split(",")?.map { it.trim() } ?: emptyList()
+
+        println("=" .repeat(60))
+        println("StateProof Generate")
+        println("=".repeat(60))
+        println("Provider: $provider")
+        println("Initial state: $initialState")
+        println("Max visits per state: $maxVisits")
+        println("Max depth: ${if (maxDepth == -1) "unlimited" else maxDepth}")
+        println()
+
+        // Load state info
+        println("Loading state machine info...")
+        val stateInfoMap = StateInfoLoader.load(provider)
+        println("Loaded ${stateInfoMap.size} states")
+        println()
+
+        // Generate
+        val config = TestGenConfig(
+            maxVisitsPerState = maxVisits,
+            maxPathDepth = if (maxDepth == -1) null else maxDepth,
+        )
+
+        val codeGenConfig = TestCodeGenConfig(
+            packageName = packageName,
+            testClassName = className,
+            stateMachineFactory = factory,
+            eventClassPrefix = eventPrefix,
+            additionalImports = additionalImports,
+        )
+
+        val result = StateProofSync.generate(
+            stateInfoMap = stateInfoMap,
+            initialState = initialState,
+            outputFile = if (outputFile != null) File(outputFile) else null,
+            codeGenConfig = codeGenConfig,
+            testGenConfig = config,
+        )
+
+        // Write to output dir if specified
+        val targetFile = if (outputFile != null) {
+            File(outputFile)
+        } else {
+            val dir = File(outputDir!!)
+            dir.mkdirs()
+            File(dir, "$className.kt")
+        }
+
+        targetFile.parentFile?.mkdirs()
+        targetFile.writeText(result)
+
+        println("Generated ${result.lines().count { it.contains("@Test") }} tests")
+        println("Written to: ${targetFile.absolutePath}")
+
+        // Write report
+        if (reportPath != null) {
+            val reportFile = File(reportPath)
+            reportFile.parentFile?.mkdirs()
+            reportFile.writeText(buildString {
+                appendLine("StateProof Generate Report")
+                appendLine("=".repeat(60))
+                appendLine("Timestamp: ${Instant.now()}")
+                appendLine("Provider: $provider")
+                appendLine("Initial state: $initialState")
+                appendLine("States: ${stateInfoMap.size}")
+                appendLine("Tests generated: ${result.lines().count { it.contains("@Test") }}")
+                appendLine("Output: ${targetFile.absolutePath}")
+            })
+            println("Report: $reportPath")
+        }
+    }
+
+    // ========================================================================
+    // SYNC command
+    // ========================================================================
+
+    private fun runSync(args: List<String>) {
+        val provider = args.requireArg("--provider")
+        val initialState = args.getArgValue("--initial-state") ?: "Initial"
         val testDir = args.getArgValue("--test-dir")
         val testFile = args.getArgValue("--test-file")
-        val initialState = args.getArgValue("--initial-state") ?: "Initial"
-        val outputReport = args.getArgValue("--output-report")
+        val dryRun = args.contains("--dry-run")
+        val preserveUserCode = !args.contains("--no-preserve-user-code")
+        val autoDeleteObsolete = args.contains("--auto-delete-obsolete")
+        val maxVisits = args.getArgValue("--max-visits")?.toIntOrNull() ?: 2
+        val maxDepth = args.getArgValue("--max-depth")?.toIntOrNull() ?: -1
+        val reportPath = args.getArgValue("--report")
 
         if (testDir == null && testFile == null) {
-            println("Error: --test-dir or --test-file required")
-            return
+            throw IllegalArgumentException("--test-dir or --test-file required")
         }
 
         println("=".repeat(60))
         println("StateProof Sync ${if (dryRun) "(DRY RUN)" else ""}")
         println("=".repeat(60))
+        println("Provider: $provider")
+        println("Initial state: $initialState")
+        println("Preserve user code: $preserveUserCode")
+        println("Auto-delete obsolete: $autoDeleteObsolete")
+        println()
 
-        // Find test files
+        // Load state info
+        println("Loading state machine info...")
+        val stateInfoMap = StateInfoLoader.load(provider)
+        println("Loaded ${stateInfoMap.size} states")
+        println()
+
+        // Run sync
+        val config = TestGenConfig(
+            maxVisitsPerState = maxVisits,
+            maxPathDepth = if (maxDepth == -1) null else maxDepth,
+        )
+
+        val result = StateProofSync.sync(
+            stateInfoMap = stateInfoMap,
+            initialState = initialState,
+            testDir = if (testDir != null) File(testDir) else null,
+            testFile = if (testFile != null) File(testFile) else null,
+            dryRun = dryRun,
+            config = config,
+        )
+
+        // Print report
+        println(result.report.summary())
+
+        // Write report to file
+        if (reportPath != null) {
+            val reportFile = File(reportPath)
+            reportFile.parentFile?.mkdirs()
+            reportFile.writeText(buildString {
+                appendLine(result.report.summary())
+                appendLine()
+                appendLine("Files modified: ${result.filesModified.size}")
+                result.filesModified.forEach { appendLine("  - ${it.absolutePath}") }
+                appendLine("Files created: ${result.filesCreated.size}")
+                result.filesCreated.forEach { appendLine("  - ${it.absolutePath}") }
+            })
+            println("Report: $reportPath")
+        }
+    }
+
+    // ========================================================================
+    // STATUS command
+    // ========================================================================
+
+    private fun runStatus(args: List<String>) {
+        val provider = args.requireArg("--provider")
+        val initialState = args.getArgValue("--initial-state") ?: "Initial"
+        val testDir = args.getArgValue("--test-dir")
+        val testFile = args.getArgValue("--test-file")
+        val maxVisits = args.getArgValue("--max-visits")?.toIntOrNull() ?: 2
+        val maxDepth = args.getArgValue("--max-depth")?.toIntOrNull() ?: -1
+
+        if (testDir == null && testFile == null) {
+            throw IllegalArgumentException("--test-dir or --test-file required")
+        }
+
+        println("=".repeat(60))
+        println("StateProof Status")
+        println("=".repeat(60))
+        println()
+
+        // Load state info
+        val stateInfoMap = StateInfoLoader.load(provider)
+        println("State machine: $provider")
+        println("States: ${stateInfoMap.size}")
+
+        // Count total transitions
+        val totalTransitions = stateInfoMap.values.sumOf { it.transitions.size }
+        println("Transitions: $totalTransitions")
+        println()
+
+        // Enumerate paths
+        val config = TestGenConfig(
+            maxVisitsPerState = maxVisits,
+            maxPathDepth = if (maxDepth == -1) null else maxDepth,
+        )
+        val enumerator = SimplePathEnumerator(stateInfoMap, initialState, config)
+        val testCases = enumerator.generateTestCases()
+        println("Expected test paths: ${testCases.size}")
+        println()
+
+        // Scan existing tests
         val testFiles = if (testFile != null) {
             listOf(File(testFile))
         } else {
-            File(testDir!!).walkTopDown()
-                .filter { it.extension == "kt" && it.readText().contains("@Test") }
-                .toList()
+            val dir = File(testDir!!)
+            if (dir.exists()) {
+                dir.walkTopDown()
+                    .filter { it.extension == "kt" && it.readText().contains("@Test") }
+                    .toList()
+            } else {
+                emptyList()
+            }
         }
 
-        println("Found ${testFiles.size} test file(s)")
-
-        // Parse existing tests
         val existingTests = mutableMapOf<String, TestFileParser.ParsedTest>()
+        var obsoleteCount = 0
         for (file in testFiles) {
             val content = file.readText()
             val parsed = TestFileParser.parseTestFile(file.absolutePath, content)
             for (test in parsed.tests) {
+                if (test.isObsolete) {
+                    obsoleteCount++
+                }
                 val hash = test.pathHash
                 if (hash != null) {
                     existingTests[hash] = test
-                } else if (test.expectedTransitions.isNotEmpty()) {
-                    // For legacy tests, use hash of transitions
-                    val legacyHash = test.expectedTransitions.hashCode().toString(16).uppercase()
-                    existingTests[legacyHash] = test
                 }
             }
         }
 
-        println("Found ${existingTests.size} existing test(s) with path info")
+        println("Test files found: ${testFiles.size}")
+        println("Existing tests with path info: ${existingTests.size}")
+        println("Obsolete tests: $obsoleteCount")
         println()
 
-        // Note: In a real integration, stateInfoMap comes from the compiled state machine
-        println("Note: To perform actual sync, provide stateInfoMap programmatically.")
-        println("See StateProofTestGenerator in your project for an example.")
-        println()
-
-        if (outputReport != null) {
-            File(outputReport).writeText(buildString {
-                appendLine("StateProof Sync Report")
-                appendLine("Generated: ${Instant.now()}")
-                appendLine("Mode: ${if (dryRun) "DRY RUN" else "SYNC"}")
-                appendLine()
-                appendLine("Existing tests found: ${existingTests.size}")
-                existingTests.forEach { (hash, test) ->
-                    appendLine("  - $hash: ${test.functionName}")
-                }
-            })
-            println("Report written to: $outputReport")
+        // Run sync to get classification
+        if (existingTests.isNotEmpty()) {
+            val engine = TestSyncEngine(config)
+            val report = engine.sync(
+                stateInfoMap = stateInfoMap,
+                initialState = initialState,
+                existingTests = existingTests,
+                currentTimestamp = Instant.now().toString(),
+            )
+            println(report.summary())
+        } else {
+            println("No existing StateProof tests found.")
+            println("Run 'stateproof generate' or './gradlew stateproofGenerate' to create tests.")
         }
     }
 
-    /**
-     * Generate test code for a state machine.
-     */
-    private fun runGenerate(args: List<String>) {
-        val output = args.getArgValue("--output")
-        val packageName = args.getArgValue("--package") ?: "com.example.test"
-        val className = args.getArgValue("--class-name") ?: "GeneratedStateMachineTest"
-        val initialState = args.getArgValue("--initial-state") ?: "Initial"
+    // ========================================================================
+    // CLEAN-OBSOLETE command
+    // ========================================================================
 
-        if (output == null) {
-            println("Error: --output required")
-            return
-        }
-
-        println("=".repeat(60))
-        println("StateProof Test Generation")
-        println("=".repeat(60))
-        println()
-        println("Output: $output")
-        println("Package: $packageName")
-        println("Class: $className")
-        println("Initial state: $initialState")
-        println()
-
-        // Note: In a real integration, stateInfoMap comes from the compiled state machine
-        println("Note: To generate tests, provide stateInfoMap programmatically.")
-        println("See StateProofTestGenerator in your project for an example.")
-    }
-
-    /**
-     * Interactive cleanup of obsolete tests.
-     */
     private fun runCleanObsolete(args: List<String>) {
-        val testDir = args.getArgValue("--test-dir")
-
-        if (testDir == null) {
-            println("Error: --test-dir required")
-            return
-        }
+        val testDir = args.requireArg("--test-dir")
+        val autoDelete = args.contains("--auto-delete")
 
         println("=".repeat(60))
         println("StateProof Clean Obsolete Tests")
@@ -200,12 +402,14 @@ object StateProofCli {
 
         val testDirFile = File(testDir)
         if (!testDirFile.exists()) {
-            println("Error: Test directory not found: $testDir")
+            println("Test directory not found: $testDir")
             return
         }
 
-        // Find test files with obsolete annotations
-        val obsoleteTests = mutableListOf<Pair<File, TestFileParser.ParsedTest>>()
+        // Find files with obsolete tests
+        data class ObsoleteInfo(val file: File, val test: TestFileParser.ParsedTest)
+
+        val obsoleteTests = mutableListOf<ObsoleteInfo>()
 
         testDirFile.walkTopDown()
             .filter { it.extension == "kt" }
@@ -215,7 +419,7 @@ object StateProofCli {
                     val parsed = TestFileParser.parseTestFile(file.absolutePath, content)
                     for (test in parsed.tests) {
                         if (test.isObsolete) {
-                            obsoleteTests.add(file to test)
+                            obsoleteTests.add(ObsoleteInfo(file, test))
                         }
                     }
                 }
@@ -229,77 +433,75 @@ object StateProofCli {
         println("Found ${obsoleteTests.size} obsolete test(s):")
         println()
 
-        obsoleteTests.forEachIndexed { index, (file, test) ->
-            println("${index + 1}. ${test.functionName}")
-            println("   File: ${file.name}")
-            println("   Transitions: ${test.expectedTransitions.take(3).joinToString(" -> ")}...")
+        obsoleteTests.forEachIndexed { index, info ->
+            println("${index + 1}. ${info.test.functionName}")
+            println("   File: ${info.file.name}")
+            if (info.test.expectedTransitions.isNotEmpty()) {
+                println("   Path: ${info.test.expectedTransitions.take(3).joinToString(" -> ")}...")
+            }
             println()
         }
 
-        println("Options:")
-        println("  [D] Delete all obsolete tests")
-        println("  [R] Review each test individually")
-        println("  [K] Keep all (exit without changes)")
-        println()
-        print("Choice [D/R/K]: ")
-
-        val choice = readLine()?.trim()?.uppercase() ?: "K"
-
-        when (choice) {
-            "D" -> {
-                println()
-                println("Deleting obsolete tests...")
-                // In a full implementation, this would remove the test functions
-                println("Note: Automatic deletion not yet implemented.")
-                println("Please remove obsolete tests manually from your IDE.")
-            }
-            "R" -> {
-                println()
-                obsoleteTests.forEachIndexed { index, (file, test) ->
-                    println("─".repeat(40))
-                    println("Test ${index + 1}/${obsoleteTests.size}: ${test.functionName}")
-                    println("File: ${file.absolutePath}")
-                    println()
-                    println("Expected transitions:")
-                    test.expectedTransitions.forEach { println("  - $it") }
-                    println()
-                    print("Delete this test? [Y/N]: ")
-                    val answer = readLine()?.trim()?.uppercase() ?: "N"
-                    if (answer == "Y") {
-                        println("Marked for deletion.")
-                    } else {
-                        println("Keeping test.")
-                    }
-                    println()
-                }
-                println("Note: Automatic deletion not yet implemented.")
-                println("Please remove marked tests manually from your IDE.")
-            }
-            else -> {
-                println("Keeping all tests. Exiting.")
-            }
+        if (autoDelete) {
+            println("Auto-deleting obsolete tests...")
+            deleteObsoleteTests(obsoleteTests.map { it.file to it.test })
+            println("Done. ${obsoleteTests.size} obsolete test(s) removed.")
+        } else {
+            println("Run with --auto-delete to remove these tests.")
+            println("Or review and delete manually in your IDE.")
         }
     }
+
+    /**
+     * Removes obsolete test functions from their files.
+     */
+    private fun deleteObsoleteTests(tests: List<Pair<File, TestFileParser.ParsedTest>>) {
+        // Group by file
+        val byFile = tests.groupBy({ it.first }, { it.second })
+
+        for ((file, obsoleteTests) in byFile) {
+            var content = file.readText()
+            for (test in obsoleteTests) {
+                // Remove the test function text from the file
+                content = content.replace(test.fullText, "")
+            }
+            // Clean up multiple blank lines
+            content = content.replace(Regex("\n{3,}"), "\n\n")
+            file.writeText(content)
+            println("  Updated: ${file.name} (removed ${obsoleteTests.size} test(s))")
+        }
+    }
+
+    // ========================================================================
+    // Argument parsing helpers
+    // ========================================================================
 
     private fun List<String>.getArgValue(name: String): String? {
         val index = indexOf(name)
         return if (index >= 0 && index < size - 1) get(index + 1) else null
     }
+
+    private fun List<String>.requireArg(name: String): String {
+        return getArgValue(name)
+            ?: throw IllegalArgumentException("Required argument '$name' not provided")
+    }
 }
 
 /**
- * Programmatic API for running sync operations.
+ * Programmatic API for StateProof sync and generate operations.
  *
- * Example usage:
+ * Use this directly from your test code when you don't want to use the Gradle plugin:
  * ```kotlin
- * val stateInfo = getMainStateMachineInfo()  // Your state machine info
- * val result = StateProofSync.sync(
+ * val stateInfo = getMainStateMachineInfo()
+ * val code = StateProofSync.generate(
  *     stateInfoMap = stateInfo,
  *     initialState = "Initial",
- *     testDir = File("src/test/kotlin"),
- *     dryRun = false,
+ *     outputFile = File("src/test/kotlin/generated/GeneratedTest.kt"),
+ *     codeGenConfig = TestCodeGenConfig(
+ *         packageName = "com.example",
+ *         testClassName = "GeneratedTest",
+ *     ),
  * )
- * println(result.report.summary())
  * ```
  */
 object StateProofSync {
@@ -311,83 +513,14 @@ object StateProofSync {
     )
 
     /**
-     * Run sync operation programmatically.
-     *
-     * @param stateInfoMap Map of state names to their info (from your state machine)
-     * @param initialState Name of the initial state
-     * @param testDir Directory containing test files
-     * @param testFile Single test file (alternative to testDir)
-     * @param dryRun If true, report changes without writing files
-     * @param config Test generation configuration
-     * @return SyncResult with report and modified files
-     */
-    fun sync(
-        stateInfoMap: Map<String, StateInfo>,
-        initialState: String,
-        testDir: File? = null,
-        testFile: File? = null,
-        dryRun: Boolean = false,
-        config: TestGenConfig = TestGenConfig.DEFAULT,
-    ): SyncResult {
-        require(testDir != null || testFile != null) {
-            "Either testDir or testFile must be provided"
-        }
-
-        // Find and parse existing tests
-        val testFiles = if (testFile != null) {
-            listOf(testFile)
-        } else {
-            testDir!!.walkTopDown()
-                .filter { it.extension == "kt" && it.readText().contains("@Test") }
-                .toList()
-        }
-
-        val existingTests = mutableMapOf<String, TestFileParser.ParsedTest>()
-        for (file in testFiles) {
-            val content = file.readText()
-            val parsed = TestFileParser.parseTestFile(file.absolutePath, content)
-            for (test in parsed.tests) {
-                val hash = test.pathHash
-                if (hash != null) {
-                    existingTests[hash] = test
-                } else if (test.expectedTransitions.isNotEmpty()) {
-                    val legacyHash = test.expectedTransitions.hashCode().toString(16).uppercase()
-                    existingTests[legacyHash] = test
-                }
-            }
-        }
-
-        // Run sync engine
-        val engine = TestSyncEngine(config)
-        val report = engine.sync(
-            stateInfoMap = stateInfoMap,
-            initialState = initialState,
-            existingTests = existingTests,
-            currentTimestamp = Instant.now().toString(),
-        )
-
-        val filesModified = mutableListOf<File>()
-        val filesCreated = mutableListOf<File>()
-
-        // In a full implementation, write changes to files here
-        // For now, just return the report
-
-        return SyncResult(
-            report = report,
-            filesModified = filesModified,
-            filesCreated = filesCreated,
-        )
-    }
-
-    /**
-     * Generate new test file programmatically.
+     * Generates a complete test file from a state machine definition.
      *
      * @param stateInfoMap Map of state names to their info
      * @param initialState Name of the initial state
-     * @param outputFile Output file path
-     * @param codeGenConfig Code generation configuration
-     * @param testGenConfig Test generation configuration
-     * @return Generated test code
+     * @param outputFile Optional file to write to (if null, only returns the code)
+     * @param codeGenConfig Configuration for code generation
+     * @param testGenConfig Configuration for path enumeration
+     * @return Generated test code as a string
      */
     fun generate(
         stateInfoMap: Map<String, StateInfo>,
@@ -412,5 +545,222 @@ object StateProofSync {
         }
 
         return code
+    }
+
+    /**
+     * Syncs existing tests with the current state machine definition.
+     *
+     * This method:
+     * 1. Enumerates all paths from the current state machine
+     * 2. Scans existing test files for @StateProofGenerated annotations
+     * 3. Classifies each test as NEW, UNCHANGED, MODIFIED, or OBSOLETE
+     * 4. When not in dry-run mode:
+     *    - NEW tests: generates and appends to the test file
+     *    - MODIFIED tests: updates expected transitions, preserves user code
+     *    - OBSOLETE tests: marks with @StateProofObsolete and @Disabled
+     *
+     * @param stateInfoMap The current state machine definition
+     * @param initialState The initial state name
+     * @param testDir Directory containing test files
+     * @param testFile Single test file (alternative to testDir)
+     * @param dryRun If true, report changes without writing files
+     * @param config Test generation configuration
+     * @return SyncResult with report and list of modified/created files
+     */
+    fun sync(
+        stateInfoMap: Map<String, StateInfo>,
+        initialState: String,
+        testDir: File? = null,
+        testFile: File? = null,
+        dryRun: Boolean = false,
+        config: TestGenConfig = TestGenConfig.DEFAULT,
+    ): SyncResult {
+        require(testDir != null || testFile != null) {
+            "Either testDir or testFile must be provided"
+        }
+
+        // Find test files
+        val testFiles = if (testFile != null) {
+            listOf(testFile)
+        } else {
+            if (testDir!!.exists()) {
+                testDir.walkTopDown()
+                    .filter { it.extension == "kt" && it.readText().contains("@Test") }
+                    .toList()
+            } else {
+                emptyList()
+            }
+        }
+
+        // Parse existing tests
+        val existingTests = mutableMapOf<String, TestFileParser.ParsedTest>()
+        val testsByFile = mutableMapOf<File, TestFileParser.ParsedTestFile>()
+
+        for (file in testFiles) {
+            val content = file.readText()
+            val parsed = TestFileParser.parseTestFile(file.absolutePath, content)
+            testsByFile[file] = parsed
+            for (test in parsed.tests) {
+                val hash = test.pathHash
+                if (hash != null) {
+                    existingTests[hash] = test
+                } else if (test.expectedTransitions.isNotEmpty()) {
+                    val legacyHash = test.expectedTransitions.hashCode().toString(16).uppercase()
+                    existingTests[legacyHash] = test
+                }
+            }
+        }
+
+        // Run sync engine
+        val engine = TestSyncEngine(config)
+        val report = engine.sync(
+            stateInfoMap = stateInfoMap,
+            initialState = initialState,
+            existingTests = existingTests,
+            currentTimestamp = Instant.now().toString(),
+        )
+
+        val filesModified = mutableListOf<File>()
+        val filesCreated = mutableListOf<File>()
+
+        if (!dryRun) {
+            val timestamp = Instant.now().toString()
+
+            // Handle MODIFIED tests: update expected transitions in existing files
+            for (result in report.modifiedTests) {
+                val existing = result.existingTest ?: continue
+                val newTransitions = result.newTransitions ?: continue
+
+                // Find the file containing this test
+                val fileEntry = testsByFile.entries.find { (_, parsed) ->
+                    parsed.tests.any { it.pathHash == existing.pathHash }
+                } ?: continue
+
+                val (file, _) = fileEntry
+                var content = file.readText()
+
+                val updatedTest = TestCodeGenerator.updateExistingTest(
+                    existingTest = existing,
+                    newTransitions = newTransitions,
+                    timestamp = timestamp,
+                )
+                content = content.replace(existing.fullText, updatedTest)
+                file.writeText(content)
+
+                if (file !in filesModified) {
+                    filesModified.add(file)
+                }
+            }
+
+            // Handle OBSOLETE tests: mark with @StateProofObsolete
+            for (result in report.obsoleteTests) {
+                val existing = result.existingTest ?: continue
+
+                val fileEntry = testsByFile.entries.find { (_, parsed) ->
+                    parsed.tests.any { it.pathHash == existing.pathHash || it.functionName == existing.functionName }
+                } ?: continue
+
+                val (file, _) = fileEntry
+                var content = file.readText()
+
+                val obsoleteTest = TestCodeGenerator.markTestObsolete(
+                    existingTest = existing,
+                    reason = "Path no longer exists in state machine",
+                    timestamp = timestamp,
+                )
+                content = content.replace(existing.fullText, obsoleteTest)
+                file.writeText(content)
+
+                if (file !in filesModified) {
+                    filesModified.add(file)
+                }
+            }
+
+            // Handle NEW tests: append to existing file or create new file
+            if (report.newTests.isNotEmpty()) {
+                // Find existing test file to append to, or create a new one
+                val targetFile = testFiles.firstOrNull() ?: run {
+                    val dir = testDir ?: testFile?.parentFile ?: File(".")
+                    File(dir, "GeneratedStateMachineTest.kt")
+                }
+
+                if (targetFile.exists()) {
+                    // Append new tests before the closing brace of the class
+                    var content = targetFile.readText()
+                    val lastBrace = content.lastIndexOf('}')
+
+                    if (lastBrace > 0) {
+                        val newTestsCode = buildString {
+                            for (result in report.newTests) {
+                                val testCase = result.testCase ?: continue
+                                appendLine()
+                                append(TestCodeGenerator.generateSingleTest(
+                                    config = TestCodeGenConfig(
+                                        packageName = "",  // Not needed for single test
+                                        testClassName = "",
+                                    ),
+                                    testCase = testCase,
+                                    timestamp = timestamp,
+                                ))
+                            }
+                        }
+
+                        content = content.substring(0, lastBrace) +
+                            newTestsCode +
+                            content.substring(lastBrace)
+                        targetFile.writeText(content)
+                        filesModified.add(targetFile)
+                    }
+                } else {
+                    // Create a new file - we need proper config
+                    // Try to infer package from test directory structure
+                    val packageName = inferPackageName(targetFile)
+                    val className = targetFile.nameWithoutExtension
+
+                    val codeGenConfig = TestCodeGenConfig(
+                        packageName = packageName,
+                        testClassName = className,
+                    )
+
+                    val testCases = report.newTests.mapNotNull { it.testCase }
+                    val code = TestCodeGenerator.generateTestFile(codeGenConfig, testCases, timestamp)
+                    targetFile.parentFile?.mkdirs()
+                    targetFile.writeText(code)
+                    filesCreated.add(targetFile)
+                }
+            }
+        }
+
+        return SyncResult(
+            report = report,
+            filesModified = filesModified,
+            filesCreated = filesCreated,
+        )
+    }
+
+    /**
+     * Infers package name from a file's path based on common source set conventions.
+     */
+    private fun inferPackageName(file: File): String {
+        val path = file.absolutePath
+        val sourceRoots = listOf(
+            "src/test/kotlin/",
+            "src/test/java/",
+            "src/androidTest/kotlin/",
+            "src/androidTest/java/",
+            "src/main/kotlin/",
+            "src/main/java/",
+        )
+
+        for (root in sourceRoots) {
+            val index = path.indexOf(root)
+            if (index >= 0) {
+                val relative = path.substring(index + root.length)
+                val dir = relative.substringBeforeLast('/')
+                return dir.replace('/', '.')
+            }
+        }
+
+        return "generated"
     }
 }
