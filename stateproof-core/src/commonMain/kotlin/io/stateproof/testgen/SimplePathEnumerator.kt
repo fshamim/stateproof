@@ -119,9 +119,10 @@ class SimplePathEnumerator(
     /**
      * Generates a test name from a path.
      *
-     * Format: _<depth>_<hash>_<path truncated>
+     * Format: _<depth>_<hash>_from_<startState>_to_<endState>
+     * Example: _4_1698_from_Initial_to_Settings
      */
-    fun generateTestName(path: List<String>, maxLength: Int = 80): String {
+    fun generateTestName(path: List<String>): String {
         val pathString = path.joinToString("_")
         val hash = HashUtils.hashPath(pathString, config.hashAlgorithm)
         val depth = (path.size + 1) / 3 + 1
@@ -133,11 +134,10 @@ class SimplePathEnumerator(
             hash.take(4)
         }
 
-        val prefix = "_${depth}_${shortHash}_"
-        val remaining = maxLength - prefix.length
-        val truncatedPath = pathString.take(remaining)
+        val startState = path.firstOrNull() ?: "Unknown"
+        val endState = path.lastOrNull() ?: "Unknown"
 
-        return "$prefix$truncatedPath"
+        return "_${depth}_${shortHash}_from_${startState}_to_${endState}"
     }
 
     /**

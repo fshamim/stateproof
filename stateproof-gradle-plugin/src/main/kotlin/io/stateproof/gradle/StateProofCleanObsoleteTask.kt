@@ -95,8 +95,9 @@ abstract class StateProofCleanObsoleteTask : DefaultTask() {
             logger.lifecycle("")
             logger.lifecycle("Done. ${obsoleteTests.size} obsolete test(s) removed.")
         } else {
-            logger.lifecycle("Set autoDeleteObsolete = true in stateproof extension to auto-delete,")
-            logger.lifecycle("or review and delete manually in your IDE.")
+            logger.lifecycle("To delete these tests, run:")
+            logger.lifecycle("  stateproof clean-obsolete --test-dir <dir> --auto-delete")
+            logger.lifecycle("Or review and delete manually in your IDE.")
         }
     }
 }

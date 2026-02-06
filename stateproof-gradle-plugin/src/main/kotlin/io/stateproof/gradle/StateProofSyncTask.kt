@@ -1,8 +1,10 @@
 package io.stateproof.gradle
 
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 
@@ -26,36 +28,80 @@ abstract class StateProofSyncTask : StateProofBaseTask() {
     abstract val testDir: DirectoryProperty
 
     @get:Input
-    abstract val preserveUserCode: Property<Boolean>
-
-    @get:Input
-    abstract val autoDeleteObsolete: Property<Boolean>
-
-    @get:Input
     abstract val dryRunMode: Property<Boolean>
+
+    @get:Input
+    @get:Optional
+    abstract val classAnnotations: ListProperty<String>
+
+    @get:Input
+    abstract val useRunTest: Property<Boolean>
+
+    @get:Input
+    @get:Optional
+    abstract val syncPackage: Property<String>
+
+    @get:Input
+    @get:Optional
+    abstract val syncClassName: Property<String>
+
+    @get:Input
+    @get:Optional
+    abstract val syncFactory: Property<String>
+
+    @get:Input
+    @get:Optional
+    abstract val syncEventPrefix: Property<String>
+
+    @get:Input
+    @get:Optional
+    abstract val syncImports: ListProperty<String>
 
     override fun configureFrom(extension: StateProofExtension) {
         super.configureFrom(extension)
         testDir.set(extension.testDir)
-        preserveUserCode.set(extension.preserveUserCode)
-        autoDeleteObsolete.set(extension.autoDeleteObsolete)
+        classAnnotations.set(emptyList())
+        useRunTest.set(false)
+        syncPackage.set(extension.testPackage)
+        syncClassName.set(extension.testClassName)
+        syncFactory.set(extension.stateMachineFactory)
+        syncEventPrefix.set(extension.eventClassPrefix)
+        syncImports.set(extension.additionalImports)
     }
 
-    override fun configureFromStateMachineConfig(config: StateMachineConfig, extension: StateProofExtension) {
+    fun configureFromStateMachineConfig(config: StateMachineConfig, extension: StateProofExtension, target: String = "jvm") {
         super.configureFromStateMachineConfig(config, extension)
-        
-        // Compute test directory from package if not explicitly set
-        // Default: src/test/kotlin/<package-as-path>
-        if (!config.testDir.isPresent) {
-            val effectivePackage = config.getEffectivePackage()
-            val packagePath = effectivePackage.replace('.', '/')
-            testDir.set(project.layout.projectDirectory.dir("src/test/kotlin/$packagePath"))
+
+        val effectivePackage = config.getEffectivePackage()
+        val packagePath = effectivePackage.replace('.', '/')
+
+        if (target == "android") {
+            if (!config.androidTestDir.isPresent) {
+                testDir.set(project.layout.projectDirectory.dir("src/androidTest/kotlin/$packagePath"))
+            } else {
+                testDir.set(config.androidTestDir)
+            }
+            val androidImports = config.androidAdditionalImports.getOrElse(emptyList())
+            val userImports = config.additionalImports.getOrElse(emptyList())
+            classAnnotations.set(listOf("@RunWith(AndroidJUnit4::class)"))
+            useRunTest.set(true)
+            syncClassName.set(config.getEffectiveAndroidClassName())
+            syncImports.set(androidImports + userImports)
         } else {
-            testDir.set(config.testDir)
+            if (!config.testDir.isPresent) {
+                testDir.set(project.layout.projectDirectory.dir("src/test/kotlin/$packagePath"))
+            } else {
+                testDir.set(config.testDir)
+            }
+            classAnnotations.set(emptyList())
+            useRunTest.set(false)
+            syncClassName.set(config.getEffectiveClassName())
+            syncImports.set(config.additionalImports)
         }
-        
-        preserveUserCode.set(extension.preserveUserCode)
-        autoDeleteObsolete.set(extension.autoDeleteObsolete)
+
+        syncPackage.set(effectivePackage)
+        syncFactory.set(config.stateMachineFactory)
+        syncEventPrefix.set(config.eventClassPrefix)
     }
 
     @TaskAction
@@ -74,7 +120,6 @@ abstract class StateProofSyncTask : StateProofBaseTask() {
             "--report", reportFile.get().asFile.absolutePath,
         )
 
-        // Pass --is-factory flag if using factory mode (auto-extracts StateInfo)
         if (providerIsFactory.get()) {
             args.add("--is-factory")
         }
@@ -83,15 +128,41 @@ abstract class StateProofSyncTask : StateProofBaseTask() {
             args.add("--dry-run")
         }
 
-        if (!preserveUserCode.get()) {
-            args.add("--no-preserve-user-code")
+        // Pass code gen config for creating new test files during sync
+        val annotations = classAnnotations.getOrElse(emptyList())
+        if (annotations.isNotEmpty()) {
+            args.addAll(listOf("--class-annotations", annotations.joinToString("|")))
         }
 
-        if (autoDeleteObsolete.get()) {
-            args.add("--auto-delete-obsolete")
+        if (useRunTest.getOrElse(false)) {
+            args.add("--use-run-test")
+        }
+
+        val pkg = syncPackage.orNull
+        if (!pkg.isNullOrBlank()) {
+            args.addAll(listOf("--package", pkg))
+        }
+
+        val cls = syncClassName.orNull
+        if (!cls.isNullOrBlank()) {
+            args.addAll(listOf("--class-name", cls))
+        }
+
+        val factory = syncFactory.orNull
+        if (!factory.isNullOrBlank()) {
+            args.addAll(listOf("--factory", factory))
+        }
+
+        val eventPrefix = syncEventPrefix.orNull
+        if (!eventPrefix.isNullOrBlank()) {
+            args.addAll(listOf("--event-prefix", eventPrefix))
+        }
+
+        val imports = syncImports.getOrElse(emptyList())
+        if (imports.isNotEmpty()) {
+            args.addAll(listOf("--imports", imports.joinToString(",")))
         }
 
         executeCli("sync", *args.toTypedArray())
     }
 }
-

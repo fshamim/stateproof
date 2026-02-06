@@ -103,13 +103,13 @@ object StateProofCli {
             |  --factory <expr>         State machine factory expression (default: createStateMachine())
             |  --event-prefix <name>    Event class prefix (default: Events)
             |  --imports <list>         Comma-separated additional imports
+            |  --class-annotations <a>  Pipe-separated class annotations (e.g., "@RunWith(AndroidJUnit4::class)")
+            |  --use-run-test           Use runTest instead of runBlocking for coroutine wrapper
             |
             |Sync Options:
             |  --test-dir <dir>         Directory containing test files (required)
             |  --test-file <file>       Single test file to sync (alternative to --test-dir)
             |  --dry-run                Preview changes without writing files
-            |  --preserve-user-code     Preserve user code during sync (default: true)
-            |  --auto-delete-obsolete   Automatically delete obsolete tests (default: false)
             |  --report <file>          Write sync report to file
             |
             |Clean Obsolete Options:
@@ -148,6 +148,8 @@ object StateProofCli {
         val factory = args.getArgValue("--factory") ?: "createStateMachine()"
         val eventPrefix = args.getArgValue("--event-prefix") ?: "Events"
         val importsStr = args.getArgValue("--imports")
+        val classAnnotationsStr = args.getArgValue("--class-annotations")
+        val useRunTest = args.contains("--use-run-test")
         val maxVisits = args.getArgValue("--max-visits")?.toIntOrNull() ?: 2
         val maxDepth = args.getArgValue("--max-depth")?.toIntOrNull() ?: -1
         val reportPath = args.getArgValue("--report")
@@ -157,6 +159,7 @@ object StateProofCli {
         }
 
         val additionalImports = importsStr?.split(",")?.map { it.trim() } ?: emptyList()
+        val classAnnotations = classAnnotationsStr?.split("|")?.map { it.trim() } ?: emptyList()
 
         println("=".repeat(60))
         println("StateProof Generate")
@@ -166,6 +169,12 @@ object StateProofCli {
         println("Initial state: $initialState")
         println("Max visits per state: $maxVisits")
         println("Max depth: ${if (maxDepth == -1) "unlimited" else maxDepth}")
+        if (classAnnotations.isNotEmpty()) {
+            println("Class annotations: $classAnnotations")
+        }
+        if (useRunTest) {
+            println("Using runTest (coroutines test)")
+        }
         println()
 
         // Load state info
@@ -190,6 +199,9 @@ object StateProofCli {
             stateMachineFactory = factory,
             eventClassPrefix = eventPrefix,
             additionalImports = additionalImports,
+            classAnnotations = classAnnotations,
+            useRunTest = useRunTest,
+            useRunBlocking = !useRunTest,
         )
 
         val result = StateProofSync.generate(
@@ -244,15 +256,23 @@ object StateProofCli {
         val testDir = args.getArgValue("--test-dir")
         val testFile = args.getArgValue("--test-file")
         val dryRun = args.contains("--dry-run")
-        val preserveUserCode = !args.contains("--no-preserve-user-code")
-        val autoDeleteObsolete = args.contains("--auto-delete-obsolete")
         val maxVisits = args.getArgValue("--max-visits")?.toIntOrNull() ?: 2
         val maxDepth = args.getArgValue("--max-depth")?.toIntOrNull() ?: -1
         val reportPath = args.getArgValue("--report")
+        val importsStr = args.getArgValue("--imports")
+        val classAnnotationsStr = args.getArgValue("--class-annotations")
+        val useRunTest = args.contains("--use-run-test")
+        val packageName = args.getArgValue("--package")
+        val className = args.getArgValue("--class-name")
+        val factory = args.getArgValue("--factory") ?: "createStateMachine()"
+        val eventPrefix = args.getArgValue("--event-prefix") ?: "Events"
 
         if (testDir == null && testFile == null) {
             throw IllegalArgumentException("--test-dir or --test-file required")
         }
+
+        val additionalImports = importsStr?.split(",")?.map { it.trim() } ?: emptyList()
+        val classAnnotations = classAnnotationsStr?.split("|")?.map { it.trim() } ?: emptyList()
 
         println("=".repeat(60))
         println("StateProof Sync ${if (dryRun) "(DRY RUN)" else ""}")
@@ -260,8 +280,6 @@ object StateProofCli {
         println("Provider: $provider")
         println("Provider mode: ${if (isFactory) "factory" else "info provider"}")
         println("Initial state: $initialState")
-        println("Preserve user code: $preserveUserCode")
-        println("Auto-delete obsolete: $autoDeleteObsolete")
         println()
 
         // Load state info
@@ -280,6 +298,20 @@ object StateProofCli {
             maxPathDepth = if (maxDepth == -1) null else maxDepth,
         )
 
+        // Build code gen config for creating new test files during sync
+        val codeGenConfig = if (packageName != null || classAnnotations.isNotEmpty() || useRunTest) {
+            TestCodeGenConfig(
+                packageName = packageName ?: "",
+                testClassName = className ?: "",
+                stateMachineFactory = factory,
+                eventClassPrefix = eventPrefix,
+                additionalImports = additionalImports,
+                classAnnotations = classAnnotations,
+                useRunTest = useRunTest,
+                useRunBlocking = !useRunTest,
+            )
+        } else null
+
         val result = StateProofSync.sync(
             stateInfoMap = stateInfoMap,
             initialState = initialState,
@@ -287,6 +319,7 @@ object StateProofCli {
             testFile = if (testFile != null) File(testFile) else null,
             dryRun = dryRun,
             config = config,
+            codeGenConfig = codeGenConfig,
         )
 
         // Print report
@@ -587,6 +620,7 @@ object StateProofSync {
         testFile: File? = null,
         dryRun: Boolean = false,
         config: TestGenConfig = TestGenConfig.DEFAULT,
+        codeGenConfig: TestCodeGenConfig? = null,
     ): SyncResult {
         require(testDir != null || testFile != null) {
             "Either testDir or testFile must be provided"
@@ -703,15 +737,16 @@ object StateProofSync {
                     val lastBrace = content.lastIndexOf('}')
 
                     if (lastBrace > 0) {
+                        val singleTestConfig = codeGenConfig ?: TestCodeGenConfig(
+                            packageName = "",
+                            testClassName = "",
+                        )
                         val newTestsCode = buildString {
                             for (result in report.newTests) {
                                 val testCase = result.testCase ?: continue
                                 appendLine()
                                 append(TestCodeGenerator.generateSingleTest(
-                                    config = TestCodeGenConfig(
-                                        packageName = "",  // Not needed for single test
-                                        testClassName = "",
-                                    ),
+                                    config = singleTestConfig,
                                     testCase = testCase,
                                     timestamp = timestamp,
                                 ))
@@ -725,18 +760,19 @@ object StateProofSync {
                         filesModified.add(targetFile)
                     }
                 } else {
-                    // Create a new file - we need proper config
-                    // Try to infer package from test directory structure
-                    val packageName = inferPackageName(targetFile)
-                    val className = targetFile.nameWithoutExtension
-
-                    val codeGenConfig = TestCodeGenConfig(
-                        packageName = packageName,
-                        testClassName = className,
+                    // Create a new file - use provided config or infer
+                    val newFileConfig = codeGenConfig?.let {
+                        it.copy(
+                            packageName = it.packageName.ifBlank { inferPackageName(targetFile) },
+                            testClassName = it.testClassName.ifBlank { targetFile.nameWithoutExtension },
+                        )
+                    } ?: TestCodeGenConfig(
+                        packageName = inferPackageName(targetFile),
+                        testClassName = targetFile.nameWithoutExtension,
                     )
 
                     val testCases = report.newTests.mapNotNull { it.testCase }
-                    val code = TestCodeGenerator.generateTestFile(codeGenConfig, testCases, timestamp)
+                    val code = TestCodeGenerator.generateTestFile(newFileConfig, testCases, timestamp)
                     targetFile.parentFile?.mkdirs()
                     targetFile.writeText(code)
                     filesCreated.add(targetFile)

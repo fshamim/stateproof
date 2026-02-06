@@ -70,6 +70,12 @@ abstract class StateProofExtension(private val project: Project) {
                 stateMachineFactory.convention("create${name.replaceFirstChar { it.uppercase() }}StateMachine()")
                 eventClassPrefix.convention("Events")
                 additionalImports.convention(emptyList<String>())
+                testTargets.convention(listOf("jvm"))
+                androidTestClassName.convention("")  // Will be derived
+                androidAdditionalImports.convention(listOf(
+                    "androidx.test.ext.junit.runners.AndroidJUnit4",
+                    "org.junit.runner.RunWith",
+                ))
             }
         }
 
@@ -155,16 +161,30 @@ abstract class StateProofExtension(private val project: Project) {
     abstract val additionalImports: ListProperty<String>
 
     /**
-     * Whether to preserve user code outside of STATEPROOF markers during sync.
-     * Default: true (strongly recommended)
+     * Test targets to generate. Valid values: "jvm", "android".
+     * Default: listOf("jvm") — only generate JVM unit tests.
+     * Set to listOf("jvm", "android") to generate both.
      */
-    abstract val preserveUserCode: Property<Boolean>
+    abstract val testTargets: ListProperty<String>
 
     /**
-     * Whether to automatically delete obsolete tests.
-     * Default: false (tests are marked @Disabled instead)
+     * Directory where generated Android test files will be written.
+     * Default: src/androidTest/kotlin/generated/stateproof
+     * Only used when testTargets includes "android".
      */
-    abstract val autoDeleteObsolete: Property<Boolean>
+    abstract val androidTestDir: DirectoryProperty
+
+    /**
+     * Test class name for generated Android test file.
+     * Default: "GeneratedStateMachineAndroidTest"
+     */
+    abstract val androidTestClassName: Property<String>
+
+    /**
+     * Additional imports for Android tests.
+     * Default: AndroidJUnit4 and RunWith imports.
+     */
+    abstract val androidAdditionalImports: ListProperty<String>
 
     /**
      * File where the sync report will be written.
@@ -207,8 +227,13 @@ abstract class StateProofExtension(private val project: Project) {
         stateMachineFactory.convention("createStateMachine()")
         eventClassPrefix.convention("Events")
         additionalImports.convention(emptyList<String>())
-        preserveUserCode.convention(true)
-        autoDeleteObsolete.convention(false)
+        testTargets.convention(listOf("jvm"))
+        androidTestDir.convention(project.layout.projectDirectory.dir("src/androidTest/kotlin/generated/stateproof"))
+        androidTestClassName.convention("GeneratedStateMachineAndroidTest")
+        androidAdditionalImports.convention(listOf(
+            "androidx.test.ext.junit.runners.AndroidJUnit4",
+            "org.junit.runner.RunWith",
+        ))
         reportFile.convention(project.layout.buildDirectory.file("stateproof/sync-report.txt"))
         dryRun.convention(false)
         classpathConfiguration.convention("")

@@ -47,7 +47,8 @@ fun <STATE : Any, EVENT : Any> StateProofNavHost(
     builder: StateProofNavGraphBuilder<STATE, EVENT>.() -> Unit,
 ) {
     val graphBuilder = remember { StateProofNavGraphBuilder<STATE, EVENT>().apply(builder) }
-    val routeMapper = remember { DefaultStateRouteMapper(graphBuilder.screens, graphBuilder.homeRoute) }
+    val routeMapper =
+        remember { DefaultStateRouteMapper(graphBuilder.screens, graphBuilder.homeRoute) }
     val currentState by stateMachine.state.collectAsStateWithLifecycle()
 
     StateProofNavHostImpl(
@@ -70,7 +71,8 @@ fun <STATE : Any, EVENT : Any> StateProofNavHost(
     builder: StateProofNavGraphBuilder<STATE, EVENT>.() -> Unit,
 ) {
     val graphBuilder = remember { StateProofNavGraphBuilder<STATE, EVENT>().apply(builder) }
-    val routeMapper = remember { DefaultStateRouteMapper(graphBuilder.screens, graphBuilder.homeRoute) }
+    val routeMapper =
+        remember { DefaultStateRouteMapper(graphBuilder.screens, graphBuilder.homeRoute) }
     val currentState by stateFlow.collectAsStateWithLifecycle()
 
     StateProofNavHostImpl(
@@ -91,7 +93,7 @@ private fun <STATE : Any, EVENT : Any> StateProofNavHostImpl(
     onBackEvent: (() -> Unit)?,
 ) {
     // Track previous route for animation direction decisions
-    var previousRoute by remember { mutableStateOf<String?>(null) }
+    var previousRoute by remember { mutableStateOf(routeMapper.getRoute(currentState)) }
     val backstack = remember { mutableListOf<String>() }
 
     val currentRoute = routeMapper.getRoute(currentState)
@@ -100,7 +102,8 @@ private fun <STATE : Any, EVENT : Any> StateProofNavHostImpl(
     Log.d(TAG, "State: $currentState -> route: $currentRoute (type: $currentScreenType)")
 
     // Determine if this is back navigation (going to a screen already in backstack)
-    val isBackNavigation = backstack.contains(currentRoute) && backstack.lastOrNull() != currentRoute
+    val isBackNavigation =
+        backstack.contains(currentRoute) && backstack.lastOrNull() != currentRoute
 
     // Update backstack
     if (currentScreenType != ScreenType.SPLASH) {
@@ -129,7 +132,6 @@ private fun <STATE : Any, EVENT : Any> StateProofNavHostImpl(
         if (splashConfig != null && splashConfig.stateClass.isInstance(currentState)) {
             splashConfig.content(currentState)
         }
-        previousRoute = currentRoute
         return
     }
 
@@ -138,21 +140,33 @@ private fun <STATE : Any, EVENT : Any> StateProofNavHostImpl(
         targetState = currentState,
         transitionSpec = {
             val targetRoute = routeMapper.getRoute(targetState)
+            val previousType = routeMapper.getScreenType(previousRoute) ?: ScreenType.DETAIL
             val targetType = routeMapper.getScreenType(targetRoute) ?: ScreenType.DETAIL
-            val isBack = backstack.indexOf(routeMapper.getRoute(initialState)) > backstack.indexOf(targetRoute) ||
-                (backstack.contains(targetRoute) && backstack.lastOrNull() != routeMapper.getRoute(initialState))
+            Log.d(
+                TAG,
+                "AnimatedContent: ${routeMapper.getRoute(initialState)} -> $targetRoute, isBack=$isBackNavigation, currentScreenType=$currentScreenType, previousType=$previousType"
+            )
 
-            Log.d(TAG, "AnimatedContent: ${routeMapper.getRoute(initialState)} -> $targetRoute, isBack=$isBack")
-
-            if (isBack) {
+            if (isBackNavigation) {
                 // Back navigation: new screen slides in from left, old slides out to right
-                slideInHorizontally(
-                    initialOffsetX = { fullWidth -> -fullWidth },
-                    animationSpec = tween(ANIM_DURATION)
-                ) togetherWith slideOutHorizontally(
-                    targetOffsetX = { fullWidth -> fullWidth },
-                    animationSpec = tween(ANIM_DURATION)
-                )
+                if (currentScreenType == ScreenType.HOME && previousType == ScreenType.MAIN) {
+                    // MAIN to Home swaps out from left.
+                    slideInHorizontally(
+                        initialOffsetX = { fullWidth -> -fullWidth },
+                        animationSpec = tween(ANIM_DURATION)
+                    ) togetherWith slideOutHorizontally(
+                        targetOffsetX = { fullWidth -> -fullWidth },
+                        animationSpec = tween(ANIM_DURATION)
+                    )
+                } else {
+                    slideInHorizontally(
+                        initialOffsetX = { fullWidth -> -fullWidth },
+                        animationSpec = tween(ANIM_DURATION)
+                    ) togetherWith slideOutHorizontally(
+                        targetOffsetX = { fullWidth -> fullWidth },
+                        animationSpec = tween(ANIM_DURATION)
+                    )
+                }
             } else {
                 // Forward navigation: depends on screen type
                 if (targetType == ScreenType.HOME || targetType == ScreenType.MAIN) {
@@ -161,11 +175,11 @@ private fun <STATE : Any, EVENT : Any> StateProofNavHostImpl(
                         initialOffsetX = { fullWidth -> -fullWidth },
                         animationSpec = tween(ANIM_DURATION)
                     ) togetherWith slideOutHorizontally(
-                        targetOffsetX = { fullWidth -> fullWidth },
+                        targetOffsetX = { fullWidth -> -fullWidth },
                         animationSpec = tween(ANIM_DURATION)
                     )
                 } else {
-                    // DETAIL slides in from right
+                    // DETAIL slides in from right current slides out to left
                     slideInHorizontally(
                         initialOffsetX = { fullWidth -> fullWidth },
                         animationSpec = tween(ANIM_DURATION)

@@ -84,7 +84,7 @@ class TestCodeGeneratorTest {
 
         val code = TestCodeGenerator.generateSingleTest(config, testCase, "2024-01-15T10:00:00Z")
 
-        assertTrue(code.contains("sm.onEvent(Events.ToB)"))
+        assertTrue(code.contains("// sm.onEvent(Events.ToB)"))
     }
 
     @Test

@@ -140,6 +140,40 @@ abstract class StateMachineConfig @Inject constructor(
     abstract val additionalImports: ListProperty<String>
 
     /**
+     * Test targets to generate. Valid values: "jvm", "android".
+     * Default: listOf("jvm") — only generate JVM unit tests.
+     * Set to listOf("jvm", "android") to generate both.
+     */
+    @get:Input
+    abstract val testTargets: ListProperty<String>
+
+    /**
+     * Directory where generated Android test files will be written.
+     * Default: derived from package as src/androidTest/kotlin/<package-as-path>
+     * Only used when testTargets includes "android".
+     */
+    @get:OutputDirectory
+    @get:Optional
+    abstract val androidTestDir: DirectoryProperty
+
+    /**
+     * Test class name for generated Android test file.
+     * Default: derived as <jvmClassName> with "Android" inserted before "Test"
+     * (e.g., GeneratedMainStateMachineAndroidTest)
+     */
+    @get:Input
+    @get:Optional
+    abstract val androidTestClassName: Property<String>
+
+    /**
+     * Additional imports for Android tests.
+     * Default: AndroidJUnit4 and RunWith imports.
+     */
+    @get:Input
+    @get:Optional
+    abstract val androidAdditionalImports: ListProperty<String>
+
+    /**
      * Gets the effective provider FQN (either factory or legacy infoProvider).
      * Returns Pair<String, Boolean> where Boolean is true if it's a factory.
      */
@@ -204,6 +238,24 @@ abstract class StateMachineConfig @Inject constructor(
             }
         }
         return "Generated${baseName}Test"
+    }
+
+    /**
+     * Derives the Android test class name.
+     *
+     * Example: "GeneratedMainStateMachineTest" → "GeneratedMainStateMachineAndroidTest"
+     */
+    fun getEffectiveAndroidClassName(): String {
+        val explicit = androidTestClassName.orNull
+        if (!explicit.isNullOrBlank()) {
+            return explicit
+        }
+        val jvmName = getEffectiveClassName()
+        return if (jvmName.endsWith("Test")) {
+            jvmName.removeSuffix("Test") + "AndroidTest"
+        } else {
+            jvmName + "Android"
+        }
     }
 }
 

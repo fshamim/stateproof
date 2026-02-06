@@ -22,6 +22,8 @@ data class TestCodeGenConfig(
     val additionalImports: List<String> = emptyList(),
     /** Indent string */
     val indent: String = "    ",
+    /** Class-level annotations (e.g., "@RunWith(AndroidJUnit4::class)") */
+    val classAnnotations: List<String> = emptyList(),
 )
 
 /**
@@ -64,6 +66,9 @@ object TestCodeGenerator {
         appendLine(" * Generated at: $timestamp")
         appendLine(" * Total tests: ${tests.size}")
         appendLine(" */")
+        for (annotation in config.classAnnotations) {
+            appendLine(annotation)
+        }
         appendLine("class ${config.testClassName} {")
         appendLine()
 
@@ -132,14 +137,15 @@ object TestCodeGenerator {
         appendLine("${indent}${indent}${StateProofMarkers.USER_SECTION}")
         appendLine()
 
-        // Default implementation
-        appendLine("${indent}${indent}val sm = ${config.stateMachineFactory}")
+        // Default implementation (commented out - user must implement)
+        appendLine("${indent}${indent}// TODO: Implement test - create state machine and fire events")
+        appendLine("${indent}${indent}// val sm = ${config.stateMachineFactory}")
         for (event in testCase.eventSequence) {
-            appendLine("${indent}${indent}sm.onEvent(${config.eventClassPrefix}.$event)")
+            appendLine("${indent}${indent}// sm.onEvent(${config.eventClassPrefix}.$event)")
         }
-        appendLine("${indent}${indent}sm.awaitIdle()")
+        appendLine("${indent}${indent}// sm.awaitIdle()")
         appendLine()
-        appendLine("${indent}${indent}assertEquals(expectedTransitions, sm.getTransitionLog())")
+        appendLine("${indent}${indent}// assertEquals(expectedTransitions, sm.getTransitionLog())")
 
         // Close function
         appendLine("${indent}}")

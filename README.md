@@ -56,11 +56,80 @@ val stateMachine = stateMachine<States, Events>(States.Initial) {
 val testCases = stateMachine.enumerateAllPaths()
 ```
 
+## Gradle Plugin
+
+StateProof uses **sync-only** to safely manage your test files.
+
+### Important: Sync-Only Design
+
+- ✅ **Adds** new tests for new state machine paths
+- ✅ **Updates** expected transitions when paths change  
+- ✅ **Marks** obsolete tests with `@StateProofObsolete`
+- ✅ **Preserves** all user-written test implementations
+- ❌ **Never deletes** any test code automatically
+
+**Test naming format**: `_depth_CRC_from_startState_to_endState`
+
+Example: `_4_1698_from_Initial_to_Settings`
+
+**To regenerate a test**: Delete it manually, then run sync again.
+
+### Setup
+
+```kotlin
+// settings.gradle.kts
+pluginManagement {
+    repositories {
+        mavenLocal()
+        gradlePluginPortal()
+    }
+}
+
+// build.gradle.kts
+plugins {
+    id("io.stateproof") version "0.1.0-SNAPSHOT"
+}
+
+stateproof {
+    stateMachines {
+        create("main") {
+            infoProvider.set("com.example.MainStateMachineKt#getMainStateMachineInfo")
+            initialState.set("Initial")
+        }
+    }
+}
+```
+
+### Available Tasks
+
+| Task | Description |
+|------|-------------|
+| `stateproofSyncAll` | Sync tests for all state machines |
+| `stateproofSync<Name>` | Sync tests for a specific state machine |
+| `stateproofSyncDryRun<Name>` | Preview sync changes without writing |
+| `stateproofStatus<Name>` | Show current sync status |
+| `stateproofCleanObsolete<Name>` | List obsolete tests |
+
+### Test Dependencies
+
+Add these dependencies for generated tests:
+
+```kotlin
+// JVM / Android Unit Tests
+testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.21")
+testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+
+// Android Instrumented Tests (if using android target)
+androidTestImplementation("org.jetbrains.kotlin:kotlin-test:1.9.21")
+androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+```
+
 ## Modules
 
 - `stateproof-core` - Core KMP state machine library
 - `stateproof-compose` - Compose Multiplatform integration (coming soon)
 - `stateproof-navigation` - Jetpack Navigation integration (coming soon)
+- `stateproof-gradle-plugin` - Gradle plugin for test generation
 - `stateproof-viewer` - Interactive state graph viewer (coming soon)
 
 ## License

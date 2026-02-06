@@ -6,8 +6,16 @@ import org.gradle.api.Project
 /**
  * StateProof Gradle Plugin
  *
- * Provides tasks for state machine test generation and synchronization.
+ * Provides tasks for state machine test synchronization.
  * Supports both single state machine and multiple state machine configurations.
+ * Supports dual test targets: JVM unit tests and Android instrumented tests.
+ *
+ * ## Important: Sync-Only Design
+ * StateProof uses sync-only to protect your test implementations:
+ * - **Never overwrites** existing test code
+ * - **Never deletes** tests automatically
+ * - **Always preserves** user implementations
+ * - To regenerate a test, delete it manually and run sync
  *
  * ## Single State Machine Mode
  * ```kotlin
@@ -18,36 +26,33 @@ import org.gradle.api.Project
  * }
  * ```
  *
- * ## Multiple State Machines Mode
+ * ## Multiple State Machines Mode with Dual Targets
  * ```kotlin
  * stateproof {
  *     stateMachines {
- *         create("main") { ... }
+ *         create("main") {
+ *             factory.set("...")
+ *             testTargets.set(listOf("jvm", "android"))
+ *         }
  *         create("laser") { ... }
  *     }
  * }
  * ```
  *
- * Tasks (single mode):
- * - stateproofGenerate: Generate test cases
- * - stateproofSync: Sync existing tests
- *
- * Tasks (multi mode):
- * - stateproofGenerateMain, stateproofGenerateLaser: Generate test cases per SM
- * - stateproofSyncMain, stateproofSyncLaser: Sync tests per SM
- * - stateproofGenerateAll, stateproofSyncAll: Run all
+ * Tasks:
+ * - stateproofSyncMain, stateproofSyncMainAndroid
+ * - stateproofSyncDryRunMain, stateproofSyncDryRunMainAndroid
+ * - stateproofSyncAll: Sync all state machines
  */
 class StateProofPlugin : Plugin<Project> {
 
     override fun apply(project: Project) {
-        // Create the extension
         val extension = project.extensions.create(
             "stateproof",
             StateProofExtension::class.java,
             project
         )
 
-        // Register tasks after project configuration is complete
         project.afterEvaluate {
             if (extension.isMultiMode()) {
                 registerMultiModeTasks(project, extension)
@@ -55,7 +60,6 @@ class StateProofPlugin : Plugin<Project> {
                 registerSingleModeTasks(project, extension)
             }
 
-            // Register shared tasks (always available)
             registerSharedTasks(project, extension)
         }
     }
@@ -64,79 +68,85 @@ class StateProofPlugin : Plugin<Project> {
      * Registers tasks for single state machine mode (backward compatible).
      */
     private fun registerSingleModeTasks(project: Project, extension: StateProofExtension) {
-        project.tasks.register("stateproofGenerate", StateProofGenerateTask::class.java) { task ->
-            task.group = TASK_GROUP
-            task.description = "Generate test cases from state machine paths"
-            task.configureFrom(extension)
-        }
+        val targets = extension.testTargets.get()
 
-        project.tasks.register("stateproofSync", StateProofSyncTask::class.java) { task ->
-            task.group = TASK_GROUP
-            task.description = "Sync existing tests with current state machine definition"
-            task.configureFrom(extension)
-            task.dryRunMode.set(false)
-        }
+        for (target in targets) {
+            val targetSuffix = if (target == "android") "Android" else ""
+            val targetLabel = if (target == "android") "Android " else ""
 
-        project.tasks.register("stateproofSyncDryRun", StateProofSyncTask::class.java) { task ->
-            task.group = TASK_GROUP
-            task.description = "Preview sync changes without writing files"
-            task.configureFrom(extension)
-            task.dryRunMode.set(true)
+            project.tasks.register("stateproofSync$targetSuffix", StateProofSyncTask::class.java) { task ->
+                task.group = TASK_GROUP
+                task.description = "Sync ${targetLabel}tests with current state machine definition"
+                task.configureFrom(extension)
+                task.dryRunMode.set(false)
+                if (target == "android") {
+                    configureTaskForAndroidSingleMode(task, extension)
+                }
+            }
+
+            project.tasks.register("stateproofSyncDryRun$targetSuffix", StateProofSyncTask::class.java) { task ->
+                task.group = TASK_GROUP
+                task.description = "Preview ${targetLabel}sync changes without writing files"
+                task.configureFrom(extension)
+                task.dryRunMode.set(true)
+                if (target == "android") {
+                    configureTaskForAndroidSingleMode(task, extension)
+                }
+            }
         }
+    }
+
+    private fun configureTaskForAndroidSingleMode(task: StateProofSyncTask, extension: StateProofExtension) {
+        task.testDir.set(extension.androidTestDir)
+        val androidImports = extension.androidAdditionalImports.get()
+        val userImports = extension.additionalImports.get()
+        task.classAnnotations.set(listOf("@RunWith(AndroidJUnit4::class)"))
+        task.useRunTest.set(true)
+        task.syncClassName.set(extension.androidTestClassName)
+        task.syncImports.set(androidImports + userImports)
     }
 
     /**
      * Registers tasks for multi state machine mode.
-     * Creates per-SM tasks like stateproofGenerateMain, stateproofSyncLaser, etc.
+     * Creates per-SM, per-target tasks.
      */
     private fun registerMultiModeTasks(project: Project, extension: StateProofExtension) {
-        val allGenerateTasks = mutableListOf<String>()
         val allSyncTasks = mutableListOf<String>()
 
         extension.stateMachines.forEach { smConfig ->
             val name = smConfig.name
             val capitalizedName = name.replaceFirstChar { it.uppercase() }
+            val targets = smConfig.testTargets.get()
 
-            // Generate task for this SM
-            val generateTaskName = "stateproofGenerate$capitalizedName"
-            allGenerateTasks.add(generateTaskName)
+            for (target in targets) {
+                val targetSuffix = if (target == "android") "Android" else ""
+                val targetLabel = if (target == "android") "Android " else ""
 
-            project.tasks.register(generateTaskName, StateProofGenerateTask::class.java) { task ->
-                task.group = TASK_GROUP
-                task.description = "Generate test cases for $name state machine"
-                task.configureFromStateMachineConfig(smConfig, extension)
-            }
+                // Sync task
+                val syncTaskName = "stateproofSync$capitalizedName$targetSuffix"
+                allSyncTasks.add(syncTaskName)
 
-            // Sync task for this SM
-            val syncTaskName = "stateproofSync$capitalizedName"
-            allSyncTasks.add(syncTaskName)
+                project.tasks.register(syncTaskName, StateProofSyncTask::class.java) { task ->
+                    task.group = TASK_GROUP
+                    task.description = "Sync ${targetLabel}tests for $name state machine"
+                    task.configureFromStateMachineConfig(smConfig, extension, target)
+                    task.dryRunMode.set(false)
+                }
 
-            project.tasks.register(syncTaskName, StateProofSyncTask::class.java) { task ->
-                task.group = TASK_GROUP
-                task.description = "Sync tests for $name state machine"
-                task.configureFromStateMachineConfig(smConfig, extension)
-                task.dryRunMode.set(false)
-            }
-
-            // Dry-run sync task for this SM
-            project.tasks.register("stateproofSyncDryRun$capitalizedName", StateProofSyncTask::class.java) { task ->
-                task.group = TASK_GROUP
-                task.description = "Preview sync changes for $name state machine"
-                task.configureFromStateMachineConfig(smConfig, extension)
-                task.dryRunMode.set(true)
+                // Dry-run sync task
+                project.tasks.register("stateproofSyncDryRun$capitalizedName$targetSuffix", StateProofSyncTask::class.java) { task ->
+                    task.group = TASK_GROUP
+                    task.description = "Preview ${targetLabel}sync changes for $name state machine"
+                    task.configureFromStateMachineConfig(smConfig, extension, target)
+                    task.dryRunMode.set(true)
+                }
             }
         }
 
-        // Register aggregate tasks
-        project.tasks.register("stateproofGenerateAll") { task ->
-            task.group = TASK_GROUP
-            task.description = "Generate test cases for all state machines"
-            task.dependsOn(allGenerateTasks)
-        }
-
+        // Aggregate task
         project.tasks.register("stateproofSyncAll") { task ->
             task.group = TASK_GROUP
-            task.description = "Sync tests for all state machines"
+            task.description = "Sync tests for all state machines (all targets)"
             task.dependsOn(allSyncTasks)
         }
     }
@@ -145,56 +155,63 @@ class StateProofPlugin : Plugin<Project> {
      * Registers tasks that are available in both modes.
      */
     private fun registerSharedTasks(project: Project, extension: StateProofExtension) {
-        // Clean obsolete - scans the test directory(s) for @StateProofObsolete marked tests
-        // In multi-SM mode, we need to handle multiple test directories
         if (extension.isMultiMode()) {
-            // In multi-SM mode, create per-SM clean tasks
+            val allCleanTasks = mutableListOf<String>()
+
             extension.stateMachines.forEach { smConfig ->
                 val name = smConfig.name
                 val capitalizedName = name.replaceFirstChar { it.uppercase() }
-                
-                project.tasks.register("stateproofCleanObsolete$capitalizedName", StateProofCleanObsoleteTask::class.java) { task ->
-                    task.group = TASK_GROUP
-                    task.description = "Remove obsolete test files for $name state machine"
-                    // Use effective test directory based on package
+                val targets = smConfig.testTargets.get()
+
+                for (target in targets) {
+                    val targetSuffix = if (target == "android") "Android" else ""
+                    val targetLabel = if (target == "android") "Android " else ""
                     val effectivePackage = smConfig.getEffectivePackage()
                     val packagePath = effectivePackage.replace('.', '/')
-                    task.testDir.set(project.layout.projectDirectory.dir("src/test/kotlin/$packagePath"))
-                    task.autoDelete.set(extension.autoDeleteObsolete)
+
+                    // Clean obsolete per target
+                    val cleanTaskName = "stateproofCleanObsolete$capitalizedName$targetSuffix"
+                    allCleanTasks.add(cleanTaskName)
+
+                    project.tasks.register(cleanTaskName, StateProofCleanObsoleteTask::class.java) { task ->
+                        task.group = TASK_GROUP
+                        task.description = "Remove obsolete ${targetLabel}test files for $name state machine"
+                        if (target == "android") {
+                            if (!smConfig.androidTestDir.isPresent) {
+                                task.testDir.set(project.layout.projectDirectory.dir("src/androidTest/kotlin/$packagePath"))
+                            } else {
+                                task.testDir.set(smConfig.androidTestDir)
+                            }
+                        } else {
+                            task.testDir.set(project.layout.projectDirectory.dir("src/test/kotlin/$packagePath"))
+                        }
+                        task.autoDelete.set(false)
+                    }
+
+                    // Status per target
+                    project.tasks.register("stateproofStatus$capitalizedName$targetSuffix", StateProofStatusTask::class.java) { task ->
+                        task.group = TASK_GROUP
+                        task.description = "Show ${targetLabel}sync status for $name state machine"
+                        task.configureFromStateMachineConfig(smConfig, extension, target)
+                    }
                 }
             }
+
             // Aggregate clean task
-            val cleanTasks = extension.stateMachines.map { "stateproofCleanObsolete${it.name.replaceFirstChar { c -> c.uppercase() }}" }
             project.tasks.register("stateproofCleanObsoleteAll") { task ->
                 task.group = TASK_GROUP
                 task.description = "Remove obsolete test files for all state machines"
-                task.dependsOn(cleanTasks)
+                task.dependsOn(allCleanTasks)
             }
         } else {
-            // Single-SM mode - use extension's testDir
+            // Single-SM mode
             project.tasks.register("stateproofCleanObsolete", StateProofCleanObsoleteTask::class.java) { task ->
                 task.group = TASK_GROUP
                 task.description = "Remove obsolete test files (marked with @StateProofObsolete)"
                 task.testDir.set(extension.testDir)
-                task.autoDelete.set(extension.autoDeleteObsolete)
+                task.autoDelete.set(false)
             }
-        }
 
-        // Status tasks
-        if (extension.isMultiMode()) {
-            // In multi-SM mode, create per-SM status tasks
-            extension.stateMachines.forEach { smConfig ->
-                val name = smConfig.name
-                val capitalizedName = name.replaceFirstChar { it.uppercase() }
-                
-                project.tasks.register("stateproofStatus$capitalizedName", StateProofStatusTask::class.java) { task ->
-                    task.group = TASK_GROUP
-                    task.description = "Show sync status for $name state machine"
-                    task.configureFromStateMachineConfig(smConfig, extension)
-                }
-            }
-        } else {
-            // Single-SM mode
             project.tasks.register("stateproofStatus", StateProofStatusTask::class.java) { task ->
                 task.group = TASK_GROUP
                 task.description = "Show current sync status"

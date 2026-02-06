@@ -25,17 +25,24 @@ abstract class StateProofStatusTask : StateProofBaseTask() {
         testDir.set(extension.testDir)
     }
 
-    override fun configureFromStateMachineConfig(config: StateMachineConfig, extension: StateProofExtension) {
+    fun configureFromStateMachineConfig(config: StateMachineConfig, extension: StateProofExtension, target: String = "jvm") {
         super.configureFromStateMachineConfig(config, extension)
-        
-        // Compute test directory from package if not explicitly set
-        // Default: src/test/kotlin/<package-as-path>
-        if (!config.testDir.isPresent) {
-            val effectivePackage = config.getEffectivePackage()
-            val packagePath = effectivePackage.replace('.', '/')
-            testDir.set(project.layout.projectDirectory.dir("src/test/kotlin/$packagePath"))
+
+        val effectivePackage = config.getEffectivePackage()
+        val packagePath = effectivePackage.replace('.', '/')
+
+        if (target == "android") {
+            if (!config.androidTestDir.isPresent) {
+                testDir.set(project.layout.projectDirectory.dir("src/androidTest/kotlin/$packagePath"))
+            } else {
+                testDir.set(config.androidTestDir)
+            }
         } else {
-            testDir.set(config.testDir)
+            if (!config.testDir.isPresent) {
+                testDir.set(project.layout.projectDirectory.dir("src/test/kotlin/$packagePath"))
+            } else {
+                testDir.set(config.testDir)
+            }
         }
     }
 
