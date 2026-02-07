@@ -214,6 +214,12 @@ abstract class StateProofExtension(private val project: Project) {
      */
     abstract val classpathConfiguration: Property<String>
 
+    /**
+     * Enables auto-discovery via KSP generated registries when no explicit config is provided.
+     */
+    abstract val autoDiscovery: Property<Boolean>
+
+
     init {
         // Set defaults for single-SM mode (backward compatibility)
         stateMachineFactoryFqn.convention("")
@@ -237,6 +243,7 @@ abstract class StateProofExtension(private val project: Project) {
         reportFile.convention(project.layout.buildDirectory.file("stateproof/sync-report.txt"))
         dryRun.convention(false)
         classpathConfiguration.convention("")
+        autoDiscovery.convention(true)
     }
 
     /**

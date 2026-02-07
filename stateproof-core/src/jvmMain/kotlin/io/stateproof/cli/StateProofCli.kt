@@ -1,6 +1,7 @@
 package io.stateproof.cli
 
 import io.stateproof.graph.StateInfo
+import io.stateproof.registry.StateMachineRegistryLoader
 import io.stateproof.sync.TestCodeGenConfig
 import io.stateproof.sync.TestCodeGenerator
 import io.stateproof.sync.TestFileParser
@@ -55,6 +56,7 @@ object StateProofCli {
             when (args[0]) {
                 "generate" -> runGenerate(args.drop(1))
                 "sync" -> runSync(args.drop(1))
+                "sync-all" -> runSyncAll(args.drop(1))
                 "status" -> runStatus(args.drop(1))
                 "clean-obsolete" -> runCleanObsolete(args.drop(1))
                 "help", "--help", "-h" -> printUsage()
@@ -82,6 +84,7 @@ object StateProofCli {
             |Commands:
             |  generate         Generate test file from state machine
             |  sync             Sync existing tests with current state machine
+            |  sync-all         Auto-discover and sync all state machines
             |  status           Show sync status without modifying files
             |  clean-obsolete   Remove obsolete tests
             |  help             Show this help message
@@ -111,6 +114,10 @@ object StateProofCli {
             |  --test-file <file>       Single test file to sync (alternative to --test-dir)
             |  --dry-run                Preview changes without writing files
             |  --report <file>          Write sync report to file
+            |
+            |Sync-All Options:
+            |  --dry-run                Preview changes without writing files
+            |  --report-dir <dir>       Write per-machine reports into a directory
             |
             |Clean Obsolete Options:
             |  --test-dir <dir>         Directory containing test files (required)
@@ -340,6 +347,141 @@ object StateProofCli {
             println("Report: $reportPath")
         }
     }
+
+    // ========================================================================
+    // SYNC-ALL command
+    // ========================================================================
+
+    private fun runSyncAll(args: List<String>) {
+        val dryRun = args.contains("--dry-run")
+        val maxVisits = args.getArgValue("--max-visits")?.toIntOrNull() ?: 2
+        val maxDepth = args.getArgValue("--max-depth")?.toIntOrNull() ?: -1
+        val reportDirArg = args.getArgValue("--report-dir")
+
+        val descriptors = StateMachineRegistryLoader.loadAll()
+        if (descriptors.isEmpty()) {
+            throw IllegalArgumentException(
+                "No StateProof registries found. Ensure KSP generated registries are on the classpath."
+            )
+        }
+
+        println("=".repeat(60))
+        println("StateProof Sync-All")
+        println("=".repeat(60))
+        println("Discovered ${descriptors.size} state machines")
+        println()
+
+        val config = TestGenConfig(
+            maxVisitsPerState = maxVisits,
+            maxPathDepth = if (maxDepth == -1) null else maxDepth,
+        )
+
+        val reportDir = reportDirArg?.let { File(it) }
+        reportDir?.mkdirs()
+
+        for (descriptor in descriptors) {
+            val baseName = descriptor.baseName.ifBlank { deriveBaseName(descriptor.name) }
+            val testPackage = if (descriptor.testPackage.isNotBlank()) descriptor.testPackage else descriptor.packageName
+            val testClassName = if (descriptor.testClassName.isNotBlank()) descriptor.testClassName else "Generated${baseName}Test"
+            val androidClassName = deriveAndroidClassName(testClassName)
+            val factoryExpr = if (descriptor.stateMachineFactory.isNotBlank()) descriptor.stateMachineFactory else "create${baseName}()"
+            val eventPrefix = if (descriptor.eventPrefix.isNotBlank()) descriptor.eventPrefix else descriptor.eventClassName
+
+            val targets = descriptor.targets.ifEmpty { listOf("jvm", "android") }
+                .map { it.lowercase() }
+                .distinct()
+
+            for (target in targets) {
+                val packagePath = testPackage.replace('.', '/')
+                val testFile = if (target == "android") {
+                    File("src/androidTest/kotlin/$packagePath/$androidClassName.kt")
+                } else {
+                    File("src/test/kotlin/$packagePath/$testClassName.kt")
+                }
+
+                val imports = mutableSetOf<String>()
+                imports.addAll(descriptor.additionalImports)
+
+                val eventPackage = descriptor.eventClassFqn.substringBeforeLast('.', "")
+                if (eventPackage.isNotBlank() && eventPackage != testPackage) {
+                    imports.add(descriptor.eventClassFqn)
+                }
+
+                val classAnnotations = if (target == "android") {
+                    listOf("@RunWith(AndroidJUnit4::class)")
+                } else {
+                    emptyList()
+                }
+
+                val targetImports = if (target == "android") {
+                    imports + listOf(
+                        "androidx.test.ext.junit.runners.AndroidJUnit4",
+                        "org.junit.runner.RunWith",
+                    )
+                } else {
+                    imports
+                }
+
+                val useRunTest = target == "android"
+
+                val codeGenConfig = TestCodeGenConfig(
+                    packageName = testPackage,
+                    testClassName = if (target == "android") androidClassName else testClassName,
+                    stateMachineFactory = factoryExpr,
+                    eventClassPrefix = eventPrefix,
+                    additionalImports = targetImports.toList(),
+                    classAnnotations = classAnnotations,
+                    useRunTest = useRunTest,
+                    useRunBlocking = !useRunTest,
+                )
+
+                val loaded = StateInfoLoader.loadFromFactoryWithState(descriptor.factoryFqn)
+
+                println("Syncing ${descriptor.name.ifBlank { baseName }} ($target)...")
+                val result = StateProofSync.sync(
+                    stateInfoMap = loaded.stateInfoMap,
+                    initialState = loaded.initialStateName,
+                    testFile = testFile,
+                    dryRun = dryRun,
+                    config = config,
+                    codeGenConfig = codeGenConfig,
+                )
+
+                println(result.report.summary())
+
+                if (reportDir != null) {
+                    val safeName = sanitizeFileName(descriptor.name.ifBlank { baseName })
+                    val reportFile = File(reportDir, "${safeName}-$target-sync-report.txt")
+                    reportFile.writeText(buildString {
+                        appendLine(result.report.summary())
+                        appendLine()
+                        appendLine("Files modified: ${result.filesModified.size}")
+                        result.filesModified.forEach { appendLine("  - ${it.absolutePath}") }
+                        appendLine("Files created: ${result.filesCreated.size}")
+                        result.filesCreated.forEach { appendLine("  - ${it.absolutePath}") }
+                    })
+                    println("Report: ${reportFile.absolutePath}")
+                }
+            }
+        }
+    }
+
+    private fun deriveAndroidClassName(jvmName: String): String {
+        return if (jvmName.endsWith("Test")) {
+            jvmName.removeSuffix("Test") + "AndroidTest"
+        } else {
+            jvmName + "Android"
+        }
+    }
+
+    private fun deriveBaseName(name: String): String {
+        if (name.isBlank()) return "StateMachine"
+        val trimmed = name.trim().replaceFirstChar { it.uppercase() }
+        return if (trimmed.endsWith("StateMachine")) trimmed else "${trimmed}StateMachine"
+    }
+
+    private fun sanitizeFileName(value: String): String = value.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+
 
     // ========================================================================
     // STATUS command
@@ -627,16 +769,13 @@ object StateProofSync {
         }
 
         // Find test files
-        val testFiles = if (testFile != null) {
-            listOf(testFile)
-        } else {
-            if (testDir!!.exists()) {
-                testDir.walkTopDown()
-                    .filter { it.extension == "kt" && it.readText().contains("@Test") }
-                    .toList()
-            } else {
-                emptyList()
-            }
+        val testFiles = when {
+            testFile != null && testFile.exists() -> listOf(testFile)
+            testFile != null -> emptyList()
+            testDir!!.exists() -> testDir.walkTopDown()
+                .filter { it.extension == "kt" && it.readText().contains("@Test") }
+                .toList()
+            else -> emptyList()
         }
 
         // Parse existing tests
@@ -726,8 +865,8 @@ object StateProofSync {
             // Handle NEW tests: append to existing file or create new file
             if (report.newTests.isNotEmpty()) {
                 // Find existing test file to append to, or create a new one
-                val targetFile = testFiles.firstOrNull() ?: run {
-                    val dir = testDir ?: testFile?.parentFile ?: File(".")
+                val targetFile = testFile ?: testFiles.firstOrNull() ?: run {
+                    val dir = testDir ?: File(".")
                     File(dir, "GeneratedStateMachineTest.kt")
                 }
 

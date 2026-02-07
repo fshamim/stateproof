@@ -1,99 +1,58 @@
 package io.stateproof.gradle
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileCollection
-import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Optional
-import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 import java.io.File
 
 /**
- * Base class for StateProof tasks that invoke the CLI via project.javaexec.
- *
- * Handles:
- * - Classpath resolution (auto-detects or uses configured configuration name)
- * - Adding compiled class output directories to the classpath
- * - Common properties (provider, initialState, maxVisits, maxDepth)
- * - JavaExec invocation
+ * Auto-discovery sync task that uses KSP-generated registries.
  */
-abstract class StateProofBaseTask : DefaultTask() {
+abstract class StateProofAutoSyncTask : DefaultTask() {
 
     @get:Input
-    abstract val stateMachineInfoProvider: Property<String>
+    abstract val dryRunMode: Property<Boolean>
 
-    @get:Input
-    abstract val initialState: Property<String>
-
-    @get:Input
-    abstract val maxVisitsPerState: Property<Int>
-
-    @get:Input
-    abstract val maxPathDepth: Property<Int>
+    @get:OutputDirectory
+    abstract val reportDir: DirectoryProperty
 
     @get:Input
     @get:Optional
     abstract val classpathConfiguration: Property<String>
 
-    /**
-     * Whether the stateMachineInfoProvider is a factory function (returns StateMachine)
-     * or a legacy info provider (returns Map<String, StateInfo>).
-     */
-    @get:Input
-    abstract val providerIsFactory: Property<Boolean>
-
-    @get:OutputFile
-    abstract val reportFile: RegularFileProperty
-
-    /**
-     * Configures common properties from the extension (single-SM mode).
-     */
-    open fun configureFrom(extension: StateProofExtension) {
-        val (providerFqn, isFactoryMode) = if (extension.isSingleMode()) {
-            extension.getSingleModeProvider()
-        } else {
-            // If in multi-mode but configureFrom is called, use first SM or error
-            throw org.gradle.api.GradleException(
-                "Cannot use configureFrom(extension) in multi-SM mode. " +
-                    "Use configureFromStateMachineConfig() instead."
-            )
-        }
-
-        stateMachineInfoProvider.set(providerFqn)
-        providerIsFactory.set(isFactoryMode)
-        initialState.set(extension.initialState)
-        maxVisitsPerState.set(extension.maxVisitsPerState)
-        maxPathDepth.set(extension.maxPathDepth)
-        classpathConfiguration.set(extension.classpathConfiguration)
-        reportFile.set(extension.reportFile)
-    }
-
-    /**
-     * Configures common properties from a StateMachineConfig (multi-SM mode).
-     */
-    open fun configureFromStateMachineConfig(config: StateMachineConfig, extension: StateProofExtension) {
-        val (providerFqn, isFactoryMode) = config.getEffectiveProvider()
-
-        stateMachineInfoProvider.set(providerFqn)
-        providerIsFactory.set(isFactoryMode)
-        initialState.set(config.initialState)
-        maxVisitsPerState.set(config.maxVisitsPerState)
-        maxPathDepth.set(config.maxPathDepth)
-        classpathConfiguration.set(extension.classpathConfiguration)
-        // Per-SM report file - use fileValue to get proper RegularFile type
-        reportFile.fileValue(
-            extension.reportFile.get().asFile.parentFile.resolve("${config.name}-sync-report.txt")
+    @TaskAction
+    fun syncAll() {
+        val args = mutableListOf(
+            "--report-dir", reportDir.get().asFile.absolutePath,
         )
+        if (dryRunMode.get()) {
+            args.add("--dry-run")
+        }
+        executeCli("sync-all", *args.toTypedArray())
     }
 
-    /**
-     * Resolves the classpath for the javaexec invocation.
-     *
-     * For Android projects, the configuration alone doesn't include the project's own
-     * compiled classes. We also add the compiled Kotlin/Java class output directories.
-     */
-    protected fun resolveClasspath(): FileCollection {
+    private fun executeCli(command: String, vararg extraArgs: String) {
+        val classpath = resolveClasspath()
+        val args = mutableListOf(command)
+        args.addAll(extraArgs)
+
+        logger.lifecycle("Executing: StateProofCli $command")
+
+        project.javaexec { spec ->
+            spec.classpath = classpath
+            spec.mainClass.set(StateProofPlugin.CLI_MAIN_CLASS)
+            spec.args = args
+            spec.standardOutput = System.out
+            spec.errorOutput = System.err
+        }
+    }
+
+    private fun resolveClasspath(): FileCollection {
         val configName = classpathConfiguration.orNull?.takeIf { it.isNotBlank() }
         var resolvedConfig: org.gradle.api.artifacts.Configuration? = null
 
@@ -107,7 +66,6 @@ abstract class StateProofBaseTask : DefaultTask() {
         }
 
         if (resolvedConfig == null) {
-            // Auto-detect
             val candidates = listOf(
                 "testRuntimeClasspath",
                 "debugUnitTestRuntimeClasspath",
@@ -133,14 +91,9 @@ abstract class StateProofBaseTask : DefaultTask() {
             )
         }
 
-        // Explicitly resolve the configuration to actual file paths.
-        // For Android projects, we need to resolve through the lenient artifact view
-        // to get the actual JAR/AAR files.
         val resolvedFiles: FileCollection = try {
-            // Try lenient resolution first (works with Android configurations)
             resolvedConfig.incoming.artifactView { view ->
                 view.attributes { attrs ->
-                    // Request JAR artifacts specifically (needed for Android AARs)
                     attrs.attribute(
                         org.gradle.api.attributes.Attribute.of(
                             "artifactType",
@@ -151,13 +104,12 @@ abstract class StateProofBaseTask : DefaultTask() {
                 }
                 view.lenient(true)
             }.files
-        } catch (e: Exception) {
-            // Fallback: resolve normally (works for JVM projects)
+        } catch (_: Exception) {
             try {
                 resolvedConfig.incoming.artifactView { view ->
                     view.lenient(true)
                 }.files
-            } catch (e2: Exception) {
+            } catch (_: Exception) {
                 project.files(resolvedConfig.resolve())
             }
         }
@@ -187,8 +139,6 @@ abstract class StateProofBaseTask : DefaultTask() {
             // Ignore
         }
 
-        // Add compiled class output directories to the classpath.
-        // For Android projects, the configuration doesn't include the project's own compiled classes.
         val compiledClassDirs = findCompiledClassDirectories()
         if (compiledClassDirs.isNotEmpty()) {
             logger.lifecycle("Adding compiled class directories to classpath:")
@@ -214,28 +164,20 @@ abstract class StateProofBaseTask : DefaultTask() {
         return classpath
     }
 
-    /**
-     * Finds compiled class directories for the project.
-     *
-     * Checks common locations for both JVM and Android projects.
-     */
     private fun findCompiledClassDirectories(): List<File> {
         val buildDir = project.layout.buildDirectory.get().asFile
         val dirs = mutableListOf<File>()
 
-        // Android Kotlin compiled classes
         val androidKotlinDirs = listOf(
             "tmp/kotlin-classes/debug",
             "tmp/kotlin-classes/release",
         )
 
-        // Android Java compiled classes
         val androidJavaDirs = listOf(
             "intermediates/javac/debug/classes",
             "intermediates/javac/release/classes",
         )
 
-        // JVM compiled classes
         val jvmDirs = listOf(
             "classes/kotlin/main",
             "classes/java/main",
@@ -281,39 +223,6 @@ abstract class StateProofBaseTask : DefaultTask() {
             result?.filterIsInstance<File>()?.filter { it.exists() } ?: emptyList()
         } catch (_: Exception) {
             emptyList()
-        }
-    }
-
-    /**
-     * Executes the StateProof CLI with the given command and arguments.
-     */
-    protected fun executeCli(command: String, vararg extraArgs: String) {
-        val classpath = resolveClasspath()
-        val provider = stateMachineInfoProvider.get()
-
-        val args = mutableListOf(
-            command,
-            "--provider", provider,
-            "--initial-state", initialState.get(),
-            "--max-visits", maxVisitsPerState.get().toString(),
-        )
-
-        val depth = maxPathDepth.get()
-        if (depth != -1) {
-            args.addAll(listOf("--max-depth", depth.toString()))
-        }
-
-        args.addAll(extraArgs)
-
-        logger.lifecycle("Executing: StateProofCli $command")
-        logger.lifecycle("Provider: $provider")
-
-        project.javaexec { spec ->
-            spec.classpath = classpath
-            spec.mainClass.set(StateProofPlugin.CLI_MAIN_CLASS)
-            spec.args = args
-            spec.standardOutput = System.out
-            spec.errorOutput = System.err
         }
     }
 }

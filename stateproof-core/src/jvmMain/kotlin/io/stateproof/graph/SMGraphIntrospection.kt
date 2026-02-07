@@ -1,6 +1,7 @@
 package io.stateproof.graph
 
 import io.stateproof.StateMachine
+import io.stateproof.registry.StateProofAutoMocks
 
 /**
  * JVM-only extension for extracting StateInfo from an SMGraph.
@@ -37,9 +38,8 @@ fun <STATE : Any, EVENT : Any> SMGraph<STATE, EVENT>.toStateInfoMap(): Map<Strin
             val eventClass = eventMatcher.matchedClass
             val eventName = eventClass.simpleName ?: "Unknown"
 
-            // Try to get objectInstance for object declarations (most common case)
             try {
-                val placeholderEvent = eventClass.objectInstance
+                val placeholderEvent = eventClass.objectInstance ?: createPlaceholderEvent(eventClass)
                 
                 if (placeholderEvent != null) {
                     @Suppress("UNCHECKED_CAST")
@@ -61,6 +61,14 @@ fun <STATE : Any, EVENT : Any> SMGraph<STATE, EVENT>.toStateInfoMap(): Map<Strin
     }
 
     return result
+}
+
+private fun createPlaceholderEvent(eventClass: kotlin.reflect.KClass<*>): Any? {
+    return try {
+        StateProofAutoMocks.provide(eventClass)
+    } catch (_: Exception) {
+        null
+    }
 }
 
 /**

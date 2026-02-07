@@ -56,11 +56,17 @@ class StateProofPlugin : Plugin<Project> {
         project.afterEvaluate {
             if (extension.isMultiMode()) {
                 registerMultiModeTasks(project, extension)
-            } else {
+                registerSharedTasks(project, extension)
+            } else if (extension.isSingleMode()) {
                 registerSingleModeTasks(project, extension)
+                registerSharedTasks(project, extension)
+            } else if (extension.autoDiscovery.get()) {
+                registerAutoDiscoveryTasks(project, extension)
+            } else {
+                throw org.gradle.api.GradleException(
+                    "No state machine configuration found and autoDiscovery is disabled."
+                )
             }
-
-            registerSharedTasks(project, extension)
         }
     }
 
@@ -219,6 +225,28 @@ class StateProofPlugin : Plugin<Project> {
             }
         }
     }
+
+    /**
+     * Registers auto-discovery sync tasks (zero-config).
+     */
+    private fun registerAutoDiscoveryTasks(project: Project, extension: StateProofExtension) {
+        project.tasks.register("stateproofSyncAll", StateProofAutoSyncTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Sync tests for all discovered state machines"
+            task.dryRunMode.set(false)
+            task.reportDir.set(project.layout.buildDirectory.dir("stateproof"))
+            task.classpathConfiguration.set(extension.classpathConfiguration)
+        }
+
+        project.tasks.register("stateproofSyncDryRunAll", StateProofAutoSyncTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Preview sync changes for all discovered state machines"
+            task.dryRunMode.set(true)
+            task.reportDir.set(project.layout.buildDirectory.dir("stateproof"))
+            task.classpathConfiguration.set(extension.classpathConfiguration)
+        }
+    }
+
 
     companion object {
         const val TASK_GROUP = "stateproof"
