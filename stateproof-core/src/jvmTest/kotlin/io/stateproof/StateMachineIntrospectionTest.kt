@@ -5,6 +5,7 @@ import io.stateproof.logging.PrintLogger
 import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * JVM-only tests for introspection capabilities.
@@ -24,6 +25,17 @@ class StateMachineIntrospectionTest {
         data object Pause : TestEvent()
         data object Resume : TestEvent()
         data object Stop : TestEvent()
+    }
+
+    sealed class GuardedState {
+        data object Initial : GuardedState()
+        data object Processing : GuardedState()
+    }
+
+    sealed class GuardedEvent {
+        data object Decide : GuardedEvent()
+        data object Done : GuardedEvent()
+        data object Retry : GuardedEvent()
     }
 
     private fun createTestStateMachine() = StateMachine<TestState, TestEvent>(
@@ -101,6 +113,46 @@ class StateMachineIntrospectionTest {
 
         val stateInfo = sm.toStateInfo()
         assertEquals(0, stateInfo.size)
+        sm.close()
+    }
+
+    @Test
+    fun toStateInfo_shouldIncludeGuardAndEmittedMetadata() {
+        val sm = StateMachine<GuardedState, GuardedEvent>(
+            dispatcher = Dispatchers.Default,
+            ioDispatcher = Dispatchers.Default,
+            logger = PrintLogger("GuardedIntrospection"),
+        ) {
+            initialState(GuardedState.Initial)
+
+            state<GuardedState.Initial> {
+                on<GuardedEvent.Decide> {
+                    condition("canProcess") { _, _ -> true } then {
+                        transitionTo(GuardedState.Processing)
+                        sideEffect { null }.emits("done" to GuardedEvent.Done::class)
+                    }
+                    otherwise {
+                        doNotTransition()
+                        sideEffect { null }.emits("retry" to GuardedEvent.Retry::class)
+                    }
+                }
+            }
+
+            state<GuardedState.Processing> {
+                on<GuardedEvent.Done> { doNotTransition() }
+                on<GuardedEvent.Retry> { transitionTo(GuardedState.Initial) }
+            }
+        }
+
+        val info = sm.toStateInfo()
+        val initial = info["Initial"]
+        assertEquals("Processing", initial?.transitions?.get("Decide"))
+
+        val details = initial?.transitionDetails.orEmpty().filter { it.eventName == "Decide" }
+        assertEquals(2, details.size)
+        assertTrue(details.any { it.guardLabel == "canProcess" && it.emittedEvents.any { e -> e.eventName == "Done" } })
+        assertTrue(details.any { it.guardLabel == "otherwise" && it.emittedEvents.any { e -> e.eventName == "Retry" } })
+
         sm.close()
     }
 }

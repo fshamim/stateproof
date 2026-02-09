@@ -52,6 +52,7 @@ object TestCodeGenerator {
         if (config.useRunTest) {
             appendLine("import kotlinx.coroutines.test.runTest")
         }
+        appendLine("import kotlin.test.Ignore")
         appendLine("import kotlin.test.Test")
         appendLine("import kotlin.test.assertEquals")
         for (import in config.additionalImports) {
@@ -225,7 +226,7 @@ object TestCodeGenerator {
             appendLine("${indent}${indent}markedAt = \"$timestamp\",")
             appendLine("${indent}${indent}originalPath = \"${existingTest.expectedTransitions.joinToString(" -> ")}\",")
             appendLine("${indent})")
-            appendLine("${indent}@Disabled(\"StateProof: Path obsolete since $timestamp - review and delete manually\")")
+            appendLine("${indent}@Ignore(\"StateProof: Path obsolete since $timestamp - review and delete manually\")")
         }
 
         return original.substring(0, insertPoint) +

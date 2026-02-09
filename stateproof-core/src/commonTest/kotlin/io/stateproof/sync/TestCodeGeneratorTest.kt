@@ -216,6 +216,6 @@ class TestCodeGeneratorTest {
 
         assertTrue(marked.contains("@StateProofObsolete"))
         assertTrue(marked.contains("State 'A' was removed"))
-        assertTrue(marked.contains("@Disabled"))
+        assertTrue(marked.contains("@Ignore"))
     }
 }

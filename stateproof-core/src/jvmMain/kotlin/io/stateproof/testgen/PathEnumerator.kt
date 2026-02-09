@@ -42,14 +42,14 @@ class PathEnumerator<STATE : Any, EVENT : Any>(
 
             val transitions = mutableListOf<TransitionInfo>()
 
-            for ((eventMatcher, transitionFn) in stateDefinition.transitions) {
+            for ((eventMatcher, eventTransition) in stateDefinition.transitions) {
                 val eventClass = getMatcherClass(eventMatcher)
                 val eventName = eventClass.simpleName ?: "Unknown"
 
                 // We need to determine the target state by invoking the transition
                 // For introspection, we use a dummy invocation approach
                 // This is a simplification - in practice we need the actual state instance
-                val targetStateInfo = findTargetState(stateMatcher, eventMatcher)
+                val targetStateInfo = findTargetState(stateMatcher, eventMatcher, eventTransition)
                 if (targetStateInfo != null) {
                     transitions.add(
                         TransitionInfo(
@@ -79,12 +79,13 @@ class PathEnumerator<STATE : Any, EVENT : Any>(
     private fun findTargetState(
         stateMatcher: Matcher<STATE, STATE>,
         eventMatcher: Matcher<EVENT, EVENT>,
+        eventTransition: io.stateproof.graph.EventTransition<STATE, EVENT>,
     ): Pair<String, KClass<*>>? {
         // Find a matching state definition
         val stateDefinition = graph.stateDefinition[stateMatcher] ?: return null
 
         // Find the transition function
-        val transitionFn = stateDefinition.transitions[eventMatcher] ?: return null
+        val transitionDef = stateDefinition.transitions[eventMatcher] ?: return null
 
         // We need to find which state this matcher is for
         // and create a sample instance to call the transition
@@ -93,6 +94,9 @@ class PathEnumerator<STATE : Any, EVENT : Any>(
         // For now, we'll build the map by examining all state definitions
         // and their target states from a higher-level introspection
 
+        if (transitionDef !== eventTransition) {
+            return null
+        }
         return null // Will be populated by introspection in enumerateAllPaths
     }
 
@@ -228,14 +232,14 @@ class PathEnumerator<STATE : Any, EVENT : Any>(
 
             val transitions = mutableListOf<TransitionInfo>()
 
-            for ((eventMatcher, transitionFn) in stateDefinition.transitions) {
+            for ((eventMatcher, eventTransition) in stateDefinition.transitions) {
                 val eventClass = getMatcherClass(eventMatcher)
                 val eventName = eventClass.simpleName ?: "Unknown"
 
                 // To find the target state, we need to examine what state the transition goes to
                 // This requires calling the transition function with sample instances
                 // For sealed classes, we can try to find matching instances
-                val targetState = findTargetStateByInvocation(fromStateClass, eventClass, transitionFn)
+                val targetState = findTargetStateByInvocation(fromStateClass, eventClass, eventTransition)
 
                 if (targetState != null) {
                     val toStateName = targetState::class.simpleName ?: "Unknown"
@@ -265,7 +269,7 @@ class PathEnumerator<STATE : Any, EVENT : Any>(
     private fun findTargetStateByInvocation(
         fromStateClass: KClass<*>,
         eventClass: KClass<*>,
-        transitionFn: (STATE, EVENT) -> io.stateproof.graph.TransitionTo<STATE, EVENT>,
+        eventTransition: io.stateproof.graph.EventTransition<STATE, EVENT>,
     ): STATE? {
         return try {
             // Try to get object instance for sealed class members
@@ -273,7 +277,7 @@ class PathEnumerator<STATE : Any, EVENT : Any>(
             val eventInstance = eventClass.objectInstance as? EVENT
 
             if (stateInstance != null && eventInstance != null) {
-                val result = transitionFn(stateInstance, eventInstance)
+                val result = eventTransition.resolve(stateInstance, eventInstance) ?: return null
                 result.toState
             } else {
                 null

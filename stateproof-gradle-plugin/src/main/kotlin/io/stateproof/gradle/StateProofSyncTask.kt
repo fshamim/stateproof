@@ -24,6 +24,11 @@ import org.gradle.api.tasks.TaskAction
  */
 abstract class StateProofSyncTask : StateProofBaseTask() {
 
+    init {
+        // Sync must always execute to detect manual test edits/deletions.
+        outputs.upToDateWhen { false }
+    }
+
     @get:OutputDirectory
     abstract val testDir: DirectoryProperty
 

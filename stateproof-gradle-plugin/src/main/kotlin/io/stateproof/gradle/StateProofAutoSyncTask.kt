@@ -15,6 +15,11 @@ import java.io.File
  */
 abstract class StateProofAutoSyncTask : DefaultTask() {
 
+    init {
+        // Sync must always execute to detect manual test edits/deletions.
+        outputs.upToDateWhen { false }
+    }
+
     @get:Input
     abstract val dryRunMode: Property<Boolean>
 

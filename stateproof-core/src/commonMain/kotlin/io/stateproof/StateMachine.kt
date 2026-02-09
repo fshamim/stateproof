@@ -97,10 +97,17 @@ class StateMachine<STATE : Any, EVENT : Any>(
         .firstOrNull() ?: error("Invalid State Definition: $this")
 
     private fun STATE.getTransition(event: EVENT): Either<Unit, Transition<STATE, EVENT>> {
-        for ((eventMatcher, createTransitionTo) in getDefinition().transitions) {
+        for ((eventMatcher, eventTransition) in getDefinition().transitions) {
             if (eventMatcher.matches(event)) {
-                val (toState, sideEffect) = createTransitionTo(this, event)
-                return Transition(event, toState, sideEffect).right()
+                val selected = eventTransition.resolve(this, event)
+                if (selected != null) {
+                    return Transition(
+                        event = event,
+                        targetState = selected.toState,
+                        sideEffect = selected.sideEffect,
+                        metadata = selected.metadata,
+                    ).right()
+                }
             }
         }
         return Unit.left()

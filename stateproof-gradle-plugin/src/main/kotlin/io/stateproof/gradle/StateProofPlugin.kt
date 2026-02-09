@@ -80,25 +80,27 @@ class StateProofPlugin : Plugin<Project> {
             val targetSuffix = if (target == "android") "Android" else ""
             val targetLabel = if (target == "android") "Android " else ""
 
-            project.tasks.register("stateproofSync$targetSuffix", StateProofSyncTask::class.java) { task ->
-                task.group = TASK_GROUP
-                task.description = "Sync ${targetLabel}tests with current state machine definition"
-                task.configureFrom(extension)
-                task.dryRunMode.set(false)
-                if (target == "android") {
-                    configureTaskForAndroidSingleMode(task, extension)
+                project.tasks.register("stateproofSync$targetSuffix", StateProofSyncTask::class.java) { task ->
+                    task.group = TASK_GROUP
+                    task.description = "Sync ${targetLabel}tests with current state machine definition"
+                    task.configureFrom(extension)
+                    task.dryRunMode.set(false)
+                    configureTaskForSyncInputs(project, task)
+                    if (target == "android") {
+                        configureTaskForAndroidSingleMode(task, extension)
+                    }
                 }
-            }
 
-            project.tasks.register("stateproofSyncDryRun$targetSuffix", StateProofSyncTask::class.java) { task ->
-                task.group = TASK_GROUP
-                task.description = "Preview ${targetLabel}sync changes without writing files"
-                task.configureFrom(extension)
-                task.dryRunMode.set(true)
-                if (target == "android") {
-                    configureTaskForAndroidSingleMode(task, extension)
+                project.tasks.register("stateproofSyncDryRun$targetSuffix", StateProofSyncTask::class.java) { task ->
+                    task.group = TASK_GROUP
+                    task.description = "Preview ${targetLabel}sync changes without writing files"
+                    task.configureFrom(extension)
+                    task.dryRunMode.set(true)
+                    configureTaskForSyncInputs(project, task)
+                    if (target == "android") {
+                        configureTaskForAndroidSingleMode(task, extension)
+                    }
                 }
-            }
         }
     }
 
@@ -137,6 +139,7 @@ class StateProofPlugin : Plugin<Project> {
                     task.description = "Sync ${targetLabel}tests for $name state machine"
                     task.configureFromStateMachineConfig(smConfig, extension, target)
                     task.dryRunMode.set(false)
+                    configureTaskForSyncInputs(project, task)
                 }
 
                 // Dry-run sync task
@@ -145,6 +148,7 @@ class StateProofPlugin : Plugin<Project> {
                     task.description = "Preview ${targetLabel}sync changes for $name state machine"
                     task.configureFromStateMachineConfig(smConfig, extension, target)
                     task.dryRunMode.set(true)
+                    configureTaskForSyncInputs(project, task)
                 }
             }
         }
@@ -236,6 +240,7 @@ class StateProofPlugin : Plugin<Project> {
             task.dryRunMode.set(false)
             task.reportDir.set(project.layout.buildDirectory.dir("stateproof"))
             task.classpathConfiguration.set(extension.classpathConfiguration)
+            configureTaskForSyncInputs(project, task)
         }
 
         project.tasks.register("stateproofSyncDryRunAll", StateProofAutoSyncTask::class.java) { task ->
@@ -244,6 +249,28 @@ class StateProofPlugin : Plugin<Project> {
             task.dryRunMode.set(true)
             task.reportDir.set(project.layout.buildDirectory.dir("stateproof"))
             task.classpathConfiguration.set(extension.classpathConfiguration)
+            configureTaskForSyncInputs(project, task)
+        }
+    }
+
+    private fun configureTaskForSyncInputs(project: Project, task: org.gradle.api.Task) {
+        val prepTaskCandidates = listOf(
+            // Android/KSP variants (needed for auto-discovery registries + compiled classes)
+            "kspDebugKotlin",
+            "compileDebugKotlin",
+            "compileDebugJavaWithJavac",
+            // JVM/Kotlin plugin variants
+            "kspKotlin",
+            "compileKotlin",
+            "compileJava",
+            // Broad fallback for plain JVM projects
+            "classes",
+        )
+
+        prepTaskCandidates.forEach { candidate ->
+            if (project.tasks.findByName(candidate) != null) {
+                task.dependsOn(candidate)
+            }
         }
     }
 

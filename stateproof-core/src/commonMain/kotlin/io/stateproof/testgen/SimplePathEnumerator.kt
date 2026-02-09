@@ -1,6 +1,7 @@
 package io.stateproof.testgen
 
 import io.stateproof.graph.StateInfo
+import io.stateproof.graph.StateTransitionInfo
 
 /**
  * Simple path enumerator that works with StateInfo maps.
@@ -28,17 +29,46 @@ class SimplePathEnumerator(
         val toState: String,
     )
 
+    private data class GraphEdge(
+        val event: String,
+        val toState: String,
+        val detail: StateTransitionInfo?,
+    )
+
+    private data class EnumeratedPath(
+        val path: List<String>,
+        val identityTokens: List<String>,
+    )
+
     /**
      * Builds a graph from the state info map.
      * Returns a map of state name to list of (event, targetState) pairs.
      */
-    private fun buildGraph(): Map<String, List<Pair<String, String>>> {
-        val graph = mutableMapOf<String, MutableList<Pair<String, String>>>()
+    private fun buildGraph(): Map<String, List<GraphEdge>> {
+        val graph = mutableMapOf<String, MutableList<GraphEdge>>()
 
         for ((stateName, stateInfo) in stateInfoMap) {
-            val transitions = mutableListOf<Pair<String, String>>()
-            for ((event, toState) in stateInfo.transitions) {
-                transitions.add(event to toState)
+            val transitions = mutableListOf<GraphEdge>()
+            if (stateInfo.transitionDetails.isNotEmpty()) {
+                for (detail in stateInfo.transitionDetails) {
+                    transitions.add(
+                        GraphEdge(
+                            event = detail.eventName,
+                            toState = detail.toStateName,
+                            detail = detail,
+                        )
+                    )
+                }
+            } else {
+                for ((event, toState) in stateInfo.transitions) {
+                    transitions.add(
+                        GraphEdge(
+                            event = event,
+                            toState = toState,
+                            detail = null,
+                        )
+                    )
+                }
             }
             graph[stateName] = transitions
         }
@@ -55,10 +85,14 @@ class SimplePathEnumerator(
      * @return List of paths, where each path is a list of alternating states and events
      */
     fun findAllPaths(): List<List<String>> {
-        val graph = buildGraph()
-        val testCases = mutableListOf<List<String>>()
+        return findAllEnumeratedPaths().map { it.path }
+    }
 
-        fun dfs(path: List<String>, visited: Map<String, Int>) {
+    private fun findAllEnumeratedPaths(): List<EnumeratedPath> {
+        val graph = buildGraph()
+        val testCases = mutableListOf<EnumeratedPath>()
+
+        fun dfs(path: List<String>, visited: Map<String, Int>, identityTokens: List<String>) {
             val current = path.last()
 
             // Check depth limit
@@ -66,7 +100,7 @@ class SimplePathEnumerator(
                 val transitionCount = (path.size - 1) / 2
                 if (transitionCount >= config.maxPathDepth) {
                     if (path.size > 1) {
-                        testCases.add(path)
+                        testCases.add(EnumeratedPath(path = path, identityTokens = identityTokens))
                     }
                     return
                 }
@@ -77,30 +111,60 @@ class SimplePathEnumerator(
             // Terminal state (no outgoing transitions)
             if (outgoingTransitions.isNullOrEmpty()) {
                 if (config.includeTerminalPaths && path.size > 1) {
-                    testCases.add(path)
+                    testCases.add(EnumeratedPath(path = path, identityTokens = identityTokens))
                 }
                 return
             }
 
             // Explore each outgoing transition
-            for ((event, next) in outgoingTransitions) {
+            for (edge in outgoingTransitions) {
+                val event = edge.event
+                val next = edge.toState
                 val newPath = path + listOf(event, next)
                 val nextCount = visited[next] ?: 0
+                val newIdentity = if (isIdentityRelevant(edge.detail)) {
+                    identityTokens + buildIdentityToken(
+                        fromState = current,
+                        event = event,
+                        toState = next,
+                        detail = edge.detail,
+                    )
+                } else {
+                    identityTokens
+                }
 
                 if (nextCount < config.maxVisitsPerState) {
                     if (nextCount + 1 == config.maxVisitsPerState) {
                         // Record path when we hit the visit limit
-                        testCases.add(newPath)
+                        testCases.add(EnumeratedPath(path = newPath, identityTokens = newIdentity))
                     } else {
                         // Continue DFS
-                        dfs(newPath, visited + (next to nextCount + 1))
+                        dfs(newPath, visited + (next to nextCount + 1), newIdentity)
                     }
                 }
             }
         }
 
-        dfs(listOf(initialState), mapOf(initialState to 1))
+        dfs(listOf(initialState), mapOf(initialState to 1), emptyList())
         return testCases
+    }
+
+    private fun buildIdentityToken(
+        fromState: String,
+        event: String,
+        toState: String,
+        detail: StateTransitionInfo?,
+    ): String {
+        val guard = detail?.guardLabel ?: ""
+        val emitted = detail?.emittedEvents
+            ?.joinToString(";") { "${it.label}:${it.eventName}" }
+            .orEmpty()
+        return "$fromState|$event|$toState|$guard|$emitted"
+    }
+
+    private fun isIdentityRelevant(detail: StateTransitionInfo?): Boolean {
+        if (detail == null) return false
+        return detail.guardLabel != null || detail.emittedEvents.isNotEmpty()
     }
 
     /**
@@ -122,8 +186,12 @@ class SimplePathEnumerator(
      * Format: _<depth>_<hash>_from_<startState>_to_<endState>
      * Example: _4_1698_from_Initial_to_Settings
      */
-    fun generateTestName(path: List<String>): String {
-        val pathString = path.joinToString("_")
+    fun generateTestName(path: List<String>, identityTokens: List<String>? = null): String {
+        val pathString = if (identityTokens.isNullOrEmpty()) {
+            path.joinToString("_")
+        } else {
+            "${path.joinToString("_")}||${identityTokens.joinToString("||")}"
+        }
         val hash = HashUtils.hashPath(pathString, config.hashAlgorithm)
         val depth = (path.size + 1) / 3 + 1
 
@@ -144,11 +212,12 @@ class SimplePathEnumerator(
      * Generates all test cases with names, expected transitions, and event sequences.
      */
     fun generateTestCases(): List<SimpleTestCase> {
-        return findAllPaths()
-            .sortedBy { it.size }
-            .map { path ->
+        return findAllEnumeratedPaths()
+            .sortedBy { it.path.size }
+            .map { enumerated ->
+                val path = enumerated.path
                 SimpleTestCase(
-                    name = generateTestName(path),
+                    name = generateTestName(path, enumerated.identityTokens),
                     path = path,
                     expectedTransitions = pathToTransitions(path),
                     eventSequence = path.filterIndexed { index, _ -> index % 2 == 1 },

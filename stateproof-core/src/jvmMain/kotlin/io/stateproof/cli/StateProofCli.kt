@@ -745,7 +745,7 @@ object StateProofSync {
      * 4. When not in dry-run mode:
      *    - NEW tests: generates and appends to the test file
      *    - MODIFIED tests: updates expected transitions, preserves user code
-     *    - OBSOLETE tests: marks with @StateProofObsolete and @Disabled
+     *    - OBSOLETE tests: marks with @StateProofObsolete and @Ignore
      *
      * @param stateInfoMap The current state machine definition
      * @param initialState The initial state name
@@ -831,6 +831,7 @@ object StateProofSync {
                     timestamp = timestamp,
                 )
                 content = content.replace(existing.fullText, updatedTest)
+                content = normalizeGeneratedTestAnnotationsAndImports(content)
                 file.writeText(content)
 
                 if (file !in filesModified) {
@@ -855,6 +856,7 @@ object StateProofSync {
                     timestamp = timestamp,
                 )
                 content = content.replace(existing.fullText, obsoleteTest)
+                content = normalizeGeneratedTestAnnotationsAndImports(content)
                 file.writeText(content)
 
                 if (file !in filesModified) {
@@ -895,6 +897,7 @@ object StateProofSync {
                         content = content.substring(0, lastBrace) +
                             newTestsCode +
                             content.substring(lastBrace)
+                        content = normalizeGeneratedTestAnnotationsAndImports(content)
                         targetFile.writeText(content)
                         filesModified.add(targetFile)
                     }
@@ -924,6 +927,47 @@ object StateProofSync {
             filesModified = filesModified,
             filesCreated = filesCreated,
         )
+    }
+
+    private fun normalizeGeneratedTestAnnotationsAndImports(content: String): String {
+        var normalized = content
+        normalized = normalized.replace("@Disabled(", "@Ignore(")
+
+        val missingImports = mutableListOf<String>()
+        if (normalized.contains("@StateProofObsolete(") &&
+            !normalized.contains("import io.stateproof.sync.StateProofObsolete")
+        ) {
+            missingImports += "import io.stateproof.sync.StateProofObsolete"
+        }
+        if (normalized.contains("@Ignore(") && !normalized.contains("import kotlin.test.Ignore")) {
+            missingImports += "import kotlin.test.Ignore"
+        }
+
+        if (missingImports.isEmpty()) {
+            return normalized
+        }
+
+        val lines = normalized.lines().toMutableList()
+        val existingImports = lines.filter { it.trim().startsWith("import ") }.toSet()
+        val importsToAdd = missingImports
+            .distinct()
+            .filterNot { existingImports.contains(it) }
+            .sorted()
+
+        if (importsToAdd.isEmpty()) {
+            return normalized
+        }
+
+        val lastImportIndex = lines.indexOfLast { it.trim().startsWith("import ") }
+        val packageIndex = lines.indexOfFirst { it.trim().startsWith("package ") }
+        val insertAt = when {
+            lastImportIndex >= 0 -> lastImportIndex + 1
+            packageIndex >= 0 -> packageIndex + 1
+            else -> 0
+        }
+
+        lines.addAll(insertAt, importsToAdd)
+        return lines.joinToString("\n")
     }
 
     /**

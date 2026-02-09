@@ -34,26 +34,64 @@ fun <STATE : Any, EVENT : Any> SMGraph<STATE, EVENT>.toStateInfoMap(): Map<Strin
         @Suppress("UNCHECKED_CAST")
         val stateInstance = (stateClass.objectInstance as? STATE) ?: initialState
 
-        for ((eventMatcher, createTransition) in stateDefinition.transitions) {
+        for ((eventMatcher, eventTransition) in stateDefinition.transitions) {
             val eventClass = eventMatcher.matchedClass
             val eventName = eventClass.simpleName ?: "Unknown"
 
             try {
                 val placeholderEvent = eventClass.objectInstance ?: createPlaceholderEvent(eventClass)
-                
+
                 if (placeholderEvent != null) {
-                    @Suppress("UNCHECKED_CAST")
-                    val transitionTo = createTransition(stateInstance, placeholderEvent as EVENT)
-                    val targetStateName = transitionTo.toState::class.simpleName ?: "Unknown"
-                    stateInfo.transitions[eventName] = targetStateName
+                    for (branch in eventTransition.branches) {
+                        @Suppress("UNCHECKED_CAST")
+                        val transitionTo = branch.createTransition(stateInstance, placeholderEvent as EVENT)
+                        val targetStateName = transitionTo.toState::class.simpleName ?: "Unknown"
+                        stateInfo.transitions.putIfAbsent(eventName, targetStateName)
+
+                        val metadata = transitionTo.metadata
+                        val emittedEvents = if (metadata.emittedEvents.isNotEmpty()) {
+                            metadata.emittedEvents
+                        } else {
+                            branch.emittedEvents
+                        }
+
+                        stateInfo.transitionDetails.add(
+                            StateTransitionInfo(
+                                eventName = eventName,
+                                toStateName = targetStateName,
+                                guardLabel = metadata.guardLabel ?: branch.guardLabel,
+                                emittedEvents = emittedEvents,
+                            )
+                        )
+                    }
                 } else {
                     // For data class events, we can't easily create instances
                     // Mark as "?" to indicate unknown target
-                    stateInfo.transitions[eventName] = "?"
+                    stateInfo.transitions.putIfAbsent(eventName, "?")
+                    for (branch in eventTransition.branches) {
+                        stateInfo.transitionDetails.add(
+                            StateTransitionInfo(
+                                eventName = eventName,
+                                toStateName = "?",
+                                guardLabel = branch.guardLabel,
+                                emittedEvents = branch.emittedEvents,
+                            )
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 // If introspection fails, mark target as unknown
-                stateInfo.transitions[eventName] = "?"
+                stateInfo.transitions.putIfAbsent(eventName, "?")
+                for (branch in eventTransition.branches) {
+                    stateInfo.transitionDetails.add(
+                        StateTransitionInfo(
+                            eventName = eventName,
+                            toStateName = "?",
+                            guardLabel = branch.guardLabel,
+                            emittedEvents = branch.emittedEvents,
+                        )
+                    )
+                }
             }
         }
 
