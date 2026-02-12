@@ -193,6 +193,12 @@ abstract class StateProofExtension(private val project: Project) {
     abstract val reportFile: RegularFileProperty
 
     /**
+     * Root output directory for generated static diagrams.
+     * Default: build/stateproof/diagrams
+     */
+    abstract val diagramOutputDir: DirectoryProperty
+
+    /**
      * Whether to run in dry-run mode (preview changes without writing).
      * Default: false
      */
@@ -241,6 +247,7 @@ abstract class StateProofExtension(private val project: Project) {
             "org.junit.runner.RunWith",
         ))
         reportFile.convention(project.layout.buildDirectory.file("stateproof/sync-report.txt"))
+        diagramOutputDir.convention(project.layout.buildDirectory.dir("stateproof/diagrams"))
         dryRun.convention(false)
         classpathConfiguration.convention("")
         autoDiscovery.convention(true)
@@ -288,4 +295,3 @@ abstract class StateProofExtension(private val project: Project) {
         action.execute(stateMachines)
     }
 }
-

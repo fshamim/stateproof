@@ -2,6 +2,8 @@ package io.stateproof.cli
 
 import io.stateproof.StateMachine
 import io.stateproof.graph.StateInfo
+import io.stateproof.graph.StateGraph
+import io.stateproof.graph.toStateGraph
 import io.stateproof.graph.toStateInfo
 
 /**
@@ -231,6 +233,11 @@ object StateInfoLoader {
         val initialStateName: String,
     )
 
+    data class LoadedStateMachineGraph(
+        val stateGraph: StateGraph,
+        val initialStateName: String,
+    )
+
     /**
      * Loads state machine info and initial state by calling a factory function.
      */
@@ -300,5 +307,73 @@ object StateInfoLoader {
         }
     }
 
-}
+    /**
+     * Loads state graph and initial state by calling a factory function.
+     */
+    fun loadFromFactoryWithGraph(
+        factoryFqn: String,
+        classLoader: ClassLoader = Thread.currentThread().contextClassLoader,
+    ): LoadedStateMachineGraph {
+        val (className, methodName) = parseProvider(factoryFqn)
 
+        val clazz = try {
+            Class.forName(className, true, classLoader)
+        } catch (e: ClassNotFoundException) {
+            if (!className.endsWith("Kt")) {
+                try {
+                    Class.forName("${className}Kt", true, classLoader)
+                } catch (e2: ClassNotFoundException) {
+                    throw RuntimeException(
+                        "Could not find class '$className' or '${className}Kt'. " +
+                            "For top-level Kotlin functions in file MyFile.kt, use: " +
+                            "com.package.MyFileKt#functionName",
+                        e2
+                    )
+                }
+            } else {
+                throw RuntimeException(
+                    "Could not find class '$className'. " +
+                        "Make sure the class is compiled and on the classpath.",
+                    e
+                )
+            }
+        }
+
+        val method = try {
+            clazz.getMethod(methodName)
+        } catch (e: NoSuchMethodException) {
+            throw RuntimeException(
+                "Could not find method '$methodName' on class '${clazz.name}'. " +
+                    "The method must be public, take no parameters, and return StateMachine<*, *>.",
+                e
+            )
+        }
+
+        val result = try {
+            method.invoke(null)
+        } catch (e: Exception) {
+            throw RuntimeException(
+                "Failed to invoke '$methodName' on '${clazz.name}': ${e.message}",
+                e
+            )
+        }
+
+        return when (result) {
+            is StateMachine<*, *> -> {
+                @Suppress("UNCHECKED_CAST")
+                val sm = result as StateMachine<Any, Any>
+                val initialState = sm.getGraph().initialState
+                val initialStateName = initialState::class.simpleName ?: initialState.toString()
+                LoadedStateMachineGraph(
+                    stateGraph = sm.toStateGraph(),
+                    initialStateName = initialStateName,
+                )
+            }
+            else -> throw RuntimeException(
+                "Factory returned ${result?.javaClass?.name} instead of StateMachine<*, *>. " +
+                    "The factory function must return a StateMachine instance."
+            )
+        }
+    }
+
+}

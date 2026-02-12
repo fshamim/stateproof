@@ -102,6 +102,13 @@ class StateProofPlugin : Plugin<Project> {
                     }
                 }
         }
+
+        project.tasks.register("stateproofDiagrams", StateProofDiagramsTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Generate static PlantUML/Mermaid diagrams for the configured state machine"
+            task.configureFrom(extension)
+            configureTaskForSyncInputs(project, task)
+        }
     }
 
     private fun configureTaskForAndroidSingleMode(task: StateProofSyncTask, extension: StateProofExtension) {
@@ -120,6 +127,7 @@ class StateProofPlugin : Plugin<Project> {
      */
     private fun registerMultiModeTasks(project: Project, extension: StateProofExtension) {
         val allSyncTasks = mutableListOf<String>()
+        val allDiagramTasks = mutableListOf<String>()
 
         extension.stateMachines.forEach { smConfig ->
             val name = smConfig.name
@@ -151,6 +159,15 @@ class StateProofPlugin : Plugin<Project> {
                     configureTaskForSyncInputs(project, task)
                 }
             }
+
+            val diagramTaskName = "stateproofDiagrams$capitalizedName"
+            allDiagramTasks.add(diagramTaskName)
+            project.tasks.register(diagramTaskName, StateProofDiagramsTask::class.java) { task ->
+                task.group = TASK_GROUP
+                task.description = "Generate static PlantUML/Mermaid diagrams for $name state machine"
+                task.configureFromStateMachineConfig(smConfig, extension)
+                configureTaskForSyncInputs(project, task)
+            }
         }
 
         // Aggregate task
@@ -158,6 +175,18 @@ class StateProofPlugin : Plugin<Project> {
             task.group = TASK_GROUP
             task.description = "Sync tests for all state machines (all targets)"
             task.dependsOn(allSyncTasks)
+        }
+
+        project.tasks.register("stateproofDiagramsAll") { task ->
+            task.group = TASK_GROUP
+            task.description = "Generate static diagrams for all configured state machines"
+            task.dependsOn(allDiagramTasks)
+        }
+
+        project.tasks.register("stateproofDiagrams") { task ->
+            task.group = TASK_GROUP
+            task.description = "Alias for stateproofDiagramsAll"
+            task.dependsOn("stateproofDiagramsAll")
         }
     }
 
@@ -250,6 +279,21 @@ class StateProofPlugin : Plugin<Project> {
             task.reportDir.set(project.layout.buildDirectory.dir("stateproof"))
             task.classpathConfiguration.set(extension.classpathConfiguration)
             configureTaskForSyncInputs(project, task)
+        }
+
+        project.tasks.register("stateproofDiagramsAll", StateProofAutoDiagramsTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Generate static diagrams for all discovered state machines"
+            task.outputDir.set(extension.diagramOutputDir)
+            task.diagramFormat.set("both")
+            task.classpathConfiguration.set(extension.classpathConfiguration)
+            configureTaskForSyncInputs(project, task)
+        }
+
+        project.tasks.register("stateproofDiagrams") { task ->
+            task.group = TASK_GROUP
+            task.description = "Alias for stateproofDiagramsAll"
+            task.dependsOn("stateproofDiagramsAll")
         }
     }
 

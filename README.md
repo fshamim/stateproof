@@ -81,6 +81,53 @@ val graph = stateMachine.toStateGraph()
 `toStateGraph()` is currently JVM-first and intended for Android/JVM analysis workflows.
 Existing `toStateInfo()` and sync/test generation APIs remain backward compatible.
 
+## Static Diagrams (PlantUML + Mermaid/ELK)
+
+Generate deterministic overview and per-group diagrams directly from `StateGraph`.
+
+```kotlin
+import io.stateproof.diagram.renderDiagrams
+import io.stateproof.diagram.writeTo
+import io.stateproof.graph.toStateGraph
+
+val bundle = stateMachine.toStateGraph().renderDiagrams(machineName = "Main")
+bundle.writeTo(File("build/stateproof/diagrams"))
+```
+
+Output layout:
+
+```text
+build/stateproof/diagrams/<machine>/
+  overview.puml
+  overview.mmd
+  groups/
+    <groupSlug>.puml
+    <groupSlug>.mmd
+```
+
+Defaults:
+- Mermaid output uses `flowchart LR` with ELK renderer directive.
+- Edge labels include event + guard + emitted-event metadata.
+- Overview shows aggregated inter-group edges (`count + sampled labels`).
+- Per-group diagrams render cross-group transitions through `External::<...>` placeholders.
+
+CLI:
+
+```bash
+# Single machine
+stateproof diagrams \
+  --provider com.example.MainStateMachineKt#createMainStateMachineForIntrospection \
+  --is-factory \
+  --output-dir build/stateproof/diagrams \
+  --name main \
+  --format both
+
+# Auto-discovery (KSP registries)
+stateproof diagrams-all \
+  --output-dir build/stateproof/diagrams \
+  --format both
+```
+
 ## Gradle Plugin
 
 StateProof uses **sync-only** to safely manage your test files.
@@ -134,6 +181,9 @@ stateproof {
 | `stateproofSyncDryRun<Name>` | Preview sync changes without writing |
 | `stateproofStatus<Name>` | Show current sync status |
 | `stateproofCleanObsolete<Name>` | List obsolete tests |
+| `stateproofDiagrams` | Generate static diagrams (single mode or alias to all) |
+| `stateproofDiagrams<Name>` | Generate static diagrams for a specific state machine (multi mode) |
+| `stateproofDiagramsAll` | Generate static diagrams for all state machines |
 
 ### Test Dependencies
 

@@ -1,5 +1,10 @@
 package io.stateproof.cli
 
+import io.stateproof.diagram.DiagramFormat
+import io.stateproof.diagram.DiagramRenderOptions
+import io.stateproof.diagram.renderDiagrams
+import io.stateproof.diagram.toFlatStateGraph
+import io.stateproof.diagram.writeTo
 import io.stateproof.graph.StateInfo
 import io.stateproof.registry.StateMachineRegistryLoader
 import io.stateproof.sync.TestCodeGenConfig
@@ -38,6 +43,14 @@ import java.time.Instant
  * java -cp <classpath> io.stateproof.cli.StateProofCli status \
  *   --provider ... --test-dir ...
  *
+ * # Generate diagrams
+ * java -cp <classpath> io.stateproof.cli.StateProofCli diagrams \
+ *   --provider ... --is-factory --output-dir build/stateproof/diagrams
+ *
+ * # Generate diagrams for all auto-discovered state machines
+ * java -cp <classpath> io.stateproof.cli.StateProofCli diagrams-all \
+ *   --output-dir build/stateproof/diagrams
+ *
  * # Clean obsolete tests
  * java -cp <classpath> io.stateproof.cli.StateProofCli clean-obsolete \
  *   --test-dir src/test/kotlin/generated --auto-delete
@@ -57,6 +70,8 @@ object StateProofCli {
                 "generate" -> runGenerate(args.drop(1))
                 "sync" -> runSync(args.drop(1))
                 "sync-all" -> runSyncAll(args.drop(1))
+                "diagrams" -> runDiagrams(args.drop(1))
+                "diagrams-all" -> runDiagramsAll(args.drop(1))
                 "status" -> runStatus(args.drop(1))
                 "clean-obsolete" -> runCleanObsolete(args.drop(1))
                 "help", "--help", "-h" -> printUsage()
@@ -77,7 +92,7 @@ object StateProofCli {
 
     private fun printUsage() {
         println("""
-            |StateProof CLI - State Machine Test Generation & Sync
+            |StateProof CLI - State Machine Test Generation, Sync & Diagrams
             |
             |Usage: stateproof <command> [options]
             |
@@ -85,6 +100,8 @@ object StateProofCli {
             |  generate         Generate test file from state machine
             |  sync             Sync existing tests with current state machine
             |  sync-all         Auto-discover and sync all state machines
+            |  diagrams         Generate static diagrams for one state machine
+            |  diagrams-all     Auto-discover and generate diagrams for all state machines
             |  status           Show sync status without modifying files
             |  clean-obsolete   Remove obsolete tests
             |  help             Show this help message
@@ -119,6 +136,11 @@ object StateProofCli {
             |  --dry-run                Preview changes without writing files
             |  --report-dir <dir>       Write per-machine reports into a directory
             |
+            |Diagram Options:
+            |  --output-dir <dir>       Output root directory (required)
+            |  --name <machine>         Optional machine folder name (default: derived)
+            |  --format <value>         plantuml | mermaid | both (default: both)
+            |
             |Clean Obsolete Options:
             |  --test-dir <dir>         Directory containing test files (required)
             |  --auto-delete            Delete without confirmation
@@ -137,6 +159,13 @@ object StateProofCli {
             |    --provider com.mubea.icages.main.MainStateMachineKt#getMainStateMachineInfo \
             |    --initial-state Initial \
             |    --test-dir src/test/kotlin/generated
+            |
+            |  # Generate diagrams from a factory (group-aware)
+            |  stateproof diagrams \
+            |    --provider com.mubea.icages.main.MainStateMachineKt#createMainStateMachineForIntrospection \
+            |    --is-factory \
+            |    --output-dir build/stateproof/diagrams \
+            |    --name main
         """.trimMargin())
     }
 
@@ -466,11 +495,120 @@ object StateProofCli {
         }
     }
 
+    // ========================================================================
+    // DIAGRAMS command
+    // ========================================================================
+
+    private fun runDiagrams(args: List<String>) {
+        val provider = args.requireArg("--provider")
+        val isFactory = args.contains("--is-factory")
+        val outputDir = File(args.requireArg("--output-dir"))
+        val machineName = args.getArgValue("--name") ?: deriveMachineName(provider)
+        val initialState = args.getArgValue("--initial-state") ?: "Initial"
+        val format = parseDiagramFormat(args.getArgValue("--format"))
+        val options = DiagramRenderOptions(format = format)
+
+        println("=".repeat(60))
+        println("StateProof Diagrams")
+        println("=".repeat(60))
+        println("Provider: $provider")
+        println("Provider mode: ${if (isFactory) "factory" else "info provider"}")
+        println("Machine name: $machineName")
+        println("Output dir: ${outputDir.absolutePath}")
+        println("Format: ${format.name}")
+        println()
+
+        val graph = if (isFactory) {
+            StateInfoLoader.loadFromFactoryWithGraph(provider).stateGraph
+        } else {
+            val info = StateInfoLoader.load(provider)
+            info.toFlatStateGraph(initialState)
+        }
+
+        val bundle = graph.renderDiagrams(
+            machineName = machineName,
+            options = options,
+        )
+        val written = bundle.writeTo(outputDir)
+
+        println("Generated ${written.size} diagram files")
+        written.forEach { println("  - ${it.absolutePath}") }
+    }
+
+    // ========================================================================
+    // DIAGRAMS-ALL command
+    // ========================================================================
+
+    private fun runDiagramsAll(args: List<String>) {
+        val outputDir = File(args.requireArg("--output-dir"))
+        val format = parseDiagramFormat(args.getArgValue("--format"))
+        val options = DiagramRenderOptions(format = format)
+        val descriptors = StateMachineRegistryLoader.loadAll()
+        if (descriptors.isEmpty()) {
+            throw IllegalArgumentException(
+                "No StateProof registries found. Ensure KSP generated registries are on the classpath."
+            )
+        }
+
+        println("=".repeat(60))
+        println("StateProof Diagrams-All")
+        println("=".repeat(60))
+        println("Discovered ${descriptors.size} state machines")
+        println("Output dir: ${outputDir.absolutePath}")
+        println("Format: ${format.name}")
+        println()
+
+        var totalFiles = 0
+        for (descriptor in descriptors.sortedBy { it.name }) {
+            val baseName = descriptor.baseName.ifBlank { deriveBaseName(descriptor.name) }
+            val machineName = descriptor.name.ifBlank { baseName }
+            println("Rendering diagrams for $machineName ...")
+            val loaded = StateInfoLoader.loadFromFactoryWithGraph(descriptor.factoryFqn)
+            val bundle = loaded.stateGraph.renderDiagrams(
+                machineName = machineName,
+                options = options,
+            )
+            val written = bundle.writeTo(outputDir)
+            totalFiles += written.size
+            println("  -> ${written.size} files")
+        }
+
+        println()
+        println("Generated $totalFiles diagram files in total")
+    }
+
+    private fun parseDiagramFormat(value: String?): DiagramFormat {
+        return when (value?.lowercase()) {
+            null, "", "both" -> DiagramFormat.BOTH
+            "plantuml", "plant_uml", "puml" -> DiagramFormat.PLANT_UML
+            "mermaid", "mmd" -> DiagramFormat.MERMAID
+            else -> throw IllegalArgumentException(
+                "Invalid --format '$value'. Expected: plantuml | mermaid | both"
+            )
+        }
+    }
+
     private fun deriveAndroidClassName(jvmName: String): String {
         return if (jvmName.endsWith("Test")) {
             jvmName.removeSuffix("Test") + "AndroidTest"
         } else {
             jvmName + "Android"
+        }
+    }
+
+    private fun deriveMachineName(provider: String): String {
+        val classPart = provider.substringBefore("#").substringAfterLast(".")
+        val methodPart = provider.substringAfter("#", "")
+        return when {
+            methodPart.startsWith("create") && methodPart.length > "create".length -> {
+                methodPart.removePrefix("create")
+            }
+            methodPart.startsWith("get") && methodPart.length > "get".length -> {
+                methodPart.removePrefix("get")
+            }
+            methodPart.isNotBlank() -> methodPart.replaceFirstChar { it.uppercase() }
+            classPart.endsWith("Kt") -> classPart.removeSuffix("Kt")
+            else -> classPart
         }
     }
 
