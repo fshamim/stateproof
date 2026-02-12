@@ -128,6 +128,48 @@ stateproof diagrams-all \
   --format both
 ```
 
+## Interactive Viewer (MVP)
+
+Generate a self-contained interactive HTML viewer per machine from `StateGraph`.
+
+```kotlin
+import io.stateproof.graph.toStateGraph
+import io.stateproof.viewer.renderViewer
+import io.stateproof.viewer.writeTo
+
+val bundle = stateMachine.toStateGraph().renderViewer(machineName = "Main")
+bundle.writeTo(File("build/stateproof/viewer"))
+```
+
+Output layout:
+
+```text
+build/stateproof/viewer/<machine>/
+  index.html
+  graph.json
+```
+
+Defaults:
+- Cytoscape.js is bundled offline (no CDN needed).
+- Default layout is `breadthfirst`.
+- Viewer supports overview, group drill-down, state focus, search, and toolbar controls.
+- `graph.json` sidecar is emitted by default (disable via CLI/Gradle option).
+
+CLI (from `stateproof-viewer-jvm`):
+
+```bash
+# Single machine
+stateproof-viewer viewer \
+  --provider com.example.MainStateMachineKt#createMainStateMachineForIntrospection \
+  --is-factory \
+  --output-dir build/stateproof/viewer \
+  --name main
+
+# Auto-discovery (KSP registries)
+stateproof-viewer viewer-all \
+  --output-dir build/stateproof/viewer
+```
+
 ## Gradle Plugin
 
 StateProof uses **sync-only** to safely manage your test files.
@@ -172,6 +214,14 @@ stateproof {
 }
 ```
 
+If you use viewer tasks, add the viewer artifact to your test/runtime classpath:
+
+```kotlin
+dependencies {
+    testImplementation("io.stateproof:stateproof-viewer-jvm:0.1.0-SNAPSHOT")
+}
+```
+
 ### Available Tasks
 
 | Task | Description |
@@ -184,6 +234,9 @@ stateproof {
 | `stateproofDiagrams` | Generate static diagrams (single mode or alias to all) |
 | `stateproofDiagrams<Name>` | Generate static diagrams for a specific state machine (multi mode) |
 | `stateproofDiagramsAll` | Generate static diagrams for all state machines |
+| `stateproofViewer` | Generate interactive viewer (single mode or alias to all) |
+| `stateproofViewer<Name>` | Generate interactive viewer for a specific state machine (multi mode) |
+| `stateproofViewerAll` | Generate interactive viewers for all state machines |
 
 ### Test Dependencies
 
@@ -204,8 +257,8 @@ androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 - `stateproof-core` - Core KMP state machine library
 - `stateproof-compose` - Compose Multiplatform integration (coming soon)
 - `stateproof-navigation` - Jetpack Navigation integration (coming soon)
-- `stateproof-gradle-plugin` - Gradle plugin for test generation
-- `stateproof-viewer` - Interactive state graph viewer (coming soon)
+- `stateproof-gradle-plugin` - Gradle plugin for test, diagram, and viewer generation
+- `stateproof-viewer` - Interactive state graph viewer generator (JVM-first)
 
 ## License
 

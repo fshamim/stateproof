@@ -109,6 +109,13 @@ class StateProofPlugin : Plugin<Project> {
             task.configureFrom(extension)
             configureTaskForSyncInputs(project, task)
         }
+
+        project.tasks.register("stateproofViewer", StateProofViewerTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Generate interactive viewer (index.html + graph.json) for the configured state machine"
+            task.configureFrom(extension)
+            configureTaskForSyncInputs(project, task)
+        }
     }
 
     private fun configureTaskForAndroidSingleMode(task: StateProofSyncTask, extension: StateProofExtension) {
@@ -128,6 +135,7 @@ class StateProofPlugin : Plugin<Project> {
     private fun registerMultiModeTasks(project: Project, extension: StateProofExtension) {
         val allSyncTasks = mutableListOf<String>()
         val allDiagramTasks = mutableListOf<String>()
+        val allViewerTasks = mutableListOf<String>()
 
         extension.stateMachines.forEach { smConfig ->
             val name = smConfig.name
@@ -168,6 +176,15 @@ class StateProofPlugin : Plugin<Project> {
                 task.configureFromStateMachineConfig(smConfig, extension)
                 configureTaskForSyncInputs(project, task)
             }
+
+            val viewerTaskName = "stateproofViewer$capitalizedName"
+            allViewerTasks.add(viewerTaskName)
+            project.tasks.register(viewerTaskName, StateProofViewerTask::class.java) { task ->
+                task.group = TASK_GROUP
+                task.description = "Generate interactive viewer for $name state machine"
+                task.configureFromStateMachineConfig(smConfig, extension)
+                configureTaskForSyncInputs(project, task)
+            }
         }
 
         // Aggregate task
@@ -187,6 +204,18 @@ class StateProofPlugin : Plugin<Project> {
             task.group = TASK_GROUP
             task.description = "Alias for stateproofDiagramsAll"
             task.dependsOn("stateproofDiagramsAll")
+        }
+
+        project.tasks.register("stateproofViewerAll") { task ->
+            task.group = TASK_GROUP
+            task.description = "Generate interactive viewers for all configured state machines"
+            task.dependsOn(allViewerTasks)
+        }
+
+        project.tasks.register("stateproofViewer") { task ->
+            task.group = TASK_GROUP
+            task.description = "Alias for stateproofViewerAll"
+            task.dependsOn("stateproofViewerAll")
         }
     }
 
@@ -295,6 +324,22 @@ class StateProofPlugin : Plugin<Project> {
             task.description = "Alias for stateproofDiagramsAll"
             task.dependsOn("stateproofDiagramsAll")
         }
+
+        project.tasks.register("stateproofViewerAll", StateProofAutoViewerTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Generate interactive viewers for all discovered state machines"
+            task.outputDir.set(extension.viewerOutputDir)
+            task.viewerLayout.set(extension.viewerLayout)
+            task.includeJsonSidecar.set(extension.viewerIncludeJsonSidecar)
+            task.classpathConfiguration.set(extension.classpathConfiguration)
+            configureTaskForSyncInputs(project, task)
+        }
+
+        project.tasks.register("stateproofViewer") { task ->
+            task.group = TASK_GROUP
+            task.description = "Alias for stateproofViewerAll"
+            task.dependsOn("stateproofViewerAll")
+        }
     }
 
     private fun configureTaskForSyncInputs(project: Project, task: org.gradle.api.Task) {
@@ -322,5 +367,6 @@ class StateProofPlugin : Plugin<Project> {
     companion object {
         const val TASK_GROUP = "stateproof"
         const val CLI_MAIN_CLASS = "io.stateproof.cli.StateProofCli"
+        const val VIEWER_CLI_MAIN_CLASS = "io.stateproof.viewer.cli.StateProofViewerCli"
     }
 }

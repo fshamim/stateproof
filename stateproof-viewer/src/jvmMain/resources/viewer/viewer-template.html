@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>__STATEPROOF_TITLE__</title>
+  <style>
+__STATEPROOF_VIEWER_CSS__
+  </style>
+</head>
+<body>
+  <div id="sp-root">
+    <header id="sp-toolbar" class="sp-toolbar">
+      <div class="sp-toolbar__group">
+        <button id="sp-zoom-in" type="button" title="Zoom In">+</button>
+        <button id="sp-zoom-out" type="button" title="Zoom Out">-</button>
+        <button id="sp-fit" type="button" title="Fit">Fit</button>
+      </div>
+      <div class="sp-toolbar__group">
+        <button id="sp-overview" type="button" title="Overview">Overview</button>
+        <button id="sp-expand-all" type="button" title="Expand All">Expand All</button>
+        <button id="sp-collapse-all" type="button" title="Collapse All">Collapse All</button>
+        <button id="sp-clear-focus" type="button" title="Clear Focus">Clear Focus</button>
+      </div>
+      <div class="sp-toolbar__group sp-toolbar__search">
+        <input id="sp-search" type="search" placeholder="Search state or event" />
+        <button id="sp-toggle-labels" type="button" title="Toggle Event Labels">Toggle Labels</button>
+      </div>
+    </header>
+    <main id="sp-canvas" aria-label="State machine viewer"></main>
+    <footer id="sp-status" class="sp-status">Mode: Overview</footer>
+  </div>
+
+  <script>
+__STATEPROOF_CYTOSCAPE_JS__
+  </script>
+  <script>
+window.STATEPROOF_GRAPH_PAYLOAD = __STATEPROOF_GRAPH_JSON__;
+window.STATEPROOF_VIEWER_OPTIONS = __STATEPROOF_OPTIONS_JSON__;
+  </script>
+  <script>
+__STATEPROOF_RUNTIME_JS__
+  </script>
+</body>
+</html>

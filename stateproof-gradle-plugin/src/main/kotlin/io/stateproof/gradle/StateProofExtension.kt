@@ -199,6 +199,24 @@ abstract class StateProofExtension(private val project: Project) {
     abstract val diagramOutputDir: DirectoryProperty
 
     /**
+     * Root output directory for generated interactive viewer files.
+     * Default: build/stateproof/viewer
+     */
+    abstract val viewerOutputDir: DirectoryProperty
+
+    /**
+     * Viewer layout algorithm.
+     * Default: breadthfirst
+     */
+    abstract val viewerLayout: Property<String>
+
+    /**
+     * Whether to emit graph.json sidecar along with index.html.
+     * Default: true
+     */
+    abstract val viewerIncludeJsonSidecar: Property<Boolean>
+
+    /**
      * Whether to run in dry-run mode (preview changes without writing).
      * Default: false
      */
@@ -248,6 +266,9 @@ abstract class StateProofExtension(private val project: Project) {
         ))
         reportFile.convention(project.layout.buildDirectory.file("stateproof/sync-report.txt"))
         diagramOutputDir.convention(project.layout.buildDirectory.dir("stateproof/diagrams"))
+        viewerOutputDir.convention(project.layout.buildDirectory.dir("stateproof/viewer"))
+        viewerLayout.convention("breadthfirst")
+        viewerIncludeJsonSidecar.convention(true)
         dryRun.convention(false)
         classpathConfiguration.convention("")
         autoDiscovery.convention(true)
