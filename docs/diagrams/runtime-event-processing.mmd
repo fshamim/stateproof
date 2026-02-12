@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant UI as "UI/Caller"
+    participant SM as "StateMachine.onEvent"
+    participant Q as "eventQueue (ArrayDeque)"
+    participant P as "Event Processor Loop"
+    participant FX as "Transition SideEffect"
+
+    UI->>SM: onEvent(OnSubmit(projectId))
+    SM->>Q: addLast(OnSubmit)
+    SM->>P: signal processing
+
+    UI->>SM: onEvent(OnRefresh)
+    SM->>Q: addLast(OnRefresh)
+    SM->>P: signal processing
+
+    P->>Q: removeFirst() returns OnSubmit
+    P->>P: apply transition (state updated)
+    P->>FX: run sideEffect(OnSubmit)
+    FX-->>P: emit OnImportSucceeded
+    P->>Q: addFirst(OnImportSucceeded)
+    P->>P: signal processing
+
+    Note over Q: Emitted event is inserted at the queue front
+
+    P->>Q: removeFirst() returns OnImportSucceeded
+    P->>P: process emitted event first
+
+    P->>Q: removeFirst() returns OnRefresh
+    P->>P: process next queued event

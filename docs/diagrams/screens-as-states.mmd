@@ -1,0 +1,8 @@
+stateDiagram-v2
+    [*] --> Dashboard: OnAppStart
+    Dashboard --> ImportProject: OnImportRequested
+    ImportProject --> Dashboard: OnBack
+    ImportProject --> Importing: OnSubmit [projectId != empty]
+    ImportProject --> ImportProject: OnSubmit [projectId is empty]
+    Importing --> ProjectReady: emits OnImportSucceeded
+    Importing --> ImportProject: emits OnImportFailed

@@ -71,6 +71,113 @@ val stateMachine = StateMachine<States, Events> {
 }
 ```
 
+## Real-World Example: Banking Transaction Workflow
+
+### Problem Statement
+
+Banking transaction flows require deterministic behavior:
+- A transfer request must not silently disappear or execute twice.
+- Validation, submission, OTP, and failure recovery must follow explicit rules.
+- The workflow should be reviewable as behavior, not hidden across UI callbacks and network code.
+
+For modeled transaction behavior, StateProof gives complete path coverage of the state graph and keeps generated tests synced as the flow evolves.
+
+Runtime queue semantics (emitted events are prioritized with queue-front insertion) are shown here:
+[`How Event Processing Works`](../README.md#how-event-processing-works-queue--side-effect-priority)
+
+### State + Event Model (with Data Class Events)
+
+```kotlin
+sealed class TransferState {
+    object Form : TransferState()
+    object Submitting : TransferState()
+    data class AwaitingOtp(val transactionId: String) : TransferState()
+    data class Success(val receiptId: String) : TransferState()
+    data class Failed(val reason: String) : TransferState()
+}
+
+sealed class TransferEvent {
+    data class OnSubmit(
+        val fromAccountId: String,
+        val toAccountId: String,
+        val amountCents: Long,
+    ) : TransferEvent()
+    data class OnOtpEntered(val code: String) : TransferEvent()
+    object OnBack : TransferEvent()
+    data class OnOtpRequired(val transactionId: String) : TransferEvent()
+    data class OnTransferCompleted(val receiptId: String) : TransferEvent()
+    data class OnTransferFailed(val reason: String) : TransferEvent()
+}
+```
+
+### State Machine DSL
+
+```kotlin
+val transferMachine = stateMachine<TransferState, TransferEvent>(TransferState.Form) {
+    state<TransferState.Form> {
+        on<TransferEvent.OnSubmit> {
+            condition("amount > 0") { _, event -> event.amountCents > 0 } then {
+                transitionTo(TransferState.Submitting)
+                sideEffect { event ->
+                    val response = bankApi.createTransfer(
+                        fromAccountId = event.fromAccountId,
+                        toAccountId = event.toAccountId,
+                        amountCents = event.amountCents,
+                    )
+                    when (response) {
+                        is TransferResponse.OtpRequired ->
+                            TransferEvent.OnOtpRequired(response.transactionId)
+                        is TransferResponse.Success ->
+                            TransferEvent.OnTransferCompleted(response.receiptId)
+                        is TransferResponse.Failure ->
+                            TransferEvent.OnTransferFailed(response.reason)
+                    }
+                } emits (
+                    "otp_required" to TransferEvent.OnOtpRequired::class,
+                    "transfer_completed" to TransferEvent.OnTransferCompleted::class,
+                    "transfer_failed" to TransferEvent.OnTransferFailed::class,
+                )
+            }
+            otherwise { doNotTransition() }
+        }
+    }
+
+    state<TransferState.Submitting> {
+        on<TransferEvent.OnOtpRequired> { event ->
+            transitionTo(TransferState.AwaitingOtp(event.transactionId))
+        }
+        on<TransferEvent.OnTransferCompleted> { event ->
+            transitionTo(TransferState.Success(event.receiptId))
+        }
+        on<TransferEvent.OnTransferFailed> { event ->
+            transitionTo(TransferState.Failed(event.reason))
+        }
+    }
+
+    state<TransferState.AwaitingOtp> {
+        on<TransferEvent.OnOtpEntered> {
+            transitionTo(TransferState.Submitting)
+            sideEffect { event ->
+                val verify = bankApi.verifyOtp(event.code)
+                if (verify.isApproved) {
+                    TransferEvent.OnTransferCompleted(verify.receiptId)
+                } else {
+                    TransferEvent.OnTransferFailed("OTP verification failed")
+                }
+            } emits (
+                "transfer_completed" to TransferEvent.OnTransferCompleted::class,
+                "transfer_failed" to TransferEvent.OnTransferFailed::class,
+            )
+        }
+        on<TransferEvent.OnBack> { transitionTo(TransferState.Form) }
+    }
+
+    state<TransferState.Failed> {
+        on<TransferEvent.OnBack> { transitionTo(TransferState.Form) }
+    }
+}
+```
+
 ## Benefits
 
 ### 1. Exhaustive Test Coverage

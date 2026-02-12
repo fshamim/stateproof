@@ -146,23 +146,23 @@ object StateProofCli {
             |  --auto-delete            Delete without confirmation
             |
             |Examples:
-            |  # Generate tests for iCages MainStateMachine
+            |  # Generate tests for a main state machine
             |  stateproof generate \
-            |    --provider com.mubea.icages.main.MainStateMachineKt#getMainStateMachineInfo \
+            |    --provider com.example.main.MainStateMachineKt#getMainStateMachineInfo \
             |    --initial-state Initial \
             |    --output-dir src/test/kotlin/generated \
-            |    --package com.mubea.icages \
+            |    --package com.example.main \
             |    --class-name GeneratedMainStateMachineTest
             |
             |  # Sync existing tests
             |  stateproof sync \
-            |    --provider com.mubea.icages.main.MainStateMachineKt#getMainStateMachineInfo \
+            |    --provider com.example.main.MainStateMachineKt#getMainStateMachineInfo \
             |    --initial-state Initial \
             |    --test-dir src/test/kotlin/generated
             |
             |  # Generate diagrams from a factory (group-aware)
             |  stateproof diagrams \
-            |    --provider com.mubea.icages.main.MainStateMachineKt#createMainStateMachineForIntrospection \
+            |    --provider com.example.main.MainStateMachineKt#createMainStateMachineForIntrospection \
             |    --is-factory \
             |    --output-dir build/stateproof/diagrams \
             |    --name main

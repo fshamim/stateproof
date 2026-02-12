@@ -54,6 +54,8 @@ class StateProofPlugin : Plugin<Project> {
         )
 
         project.afterEvaluate {
+            registerAgentTasks(project, extension)
+
             if (extension.isMultiMode()) {
                 registerMultiModeTasks(project, extension)
                 registerSharedTasks(project, extension)
@@ -75,32 +77,41 @@ class StateProofPlugin : Plugin<Project> {
      */
     private fun registerSingleModeTasks(project: Project, extension: StateProofExtension) {
         val targets = extension.testTargets.get()
+        val allSyncTasks = mutableListOf<String>()
 
         for (target in targets) {
             val targetSuffix = if (target == "android") "Android" else ""
             val targetLabel = if (target == "android") "Android " else ""
+            val taskName = "stateproofSync$targetSuffix"
+            allSyncTasks.add(taskName)
 
-                project.tasks.register("stateproofSync$targetSuffix", StateProofSyncTask::class.java) { task ->
-                    task.group = TASK_GROUP
-                    task.description = "Sync ${targetLabel}tests with current state machine definition"
-                    task.configureFrom(extension)
-                    task.dryRunMode.set(false)
-                    configureTaskForSyncInputs(project, task)
-                    if (target == "android") {
-                        configureTaskForAndroidSingleMode(task, extension)
-                    }
+            project.tasks.register(taskName, StateProofSyncTask::class.java) { task ->
+                task.group = TASK_GROUP
+                task.description = "Sync ${targetLabel}tests with current state machine definition"
+                task.configureFrom(extension)
+                task.dryRunMode.set(false)
+                configureTaskForSyncInputs(project, task)
+                if (target == "android") {
+                    configureTaskForAndroidSingleMode(task, extension)
                 }
+            }
 
-                project.tasks.register("stateproofSyncDryRun$targetSuffix", StateProofSyncTask::class.java) { task ->
-                    task.group = TASK_GROUP
-                    task.description = "Preview ${targetLabel}sync changes without writing files"
-                    task.configureFrom(extension)
-                    task.dryRunMode.set(true)
-                    configureTaskForSyncInputs(project, task)
-                    if (target == "android") {
-                        configureTaskForAndroidSingleMode(task, extension)
-                    }
+            project.tasks.register("stateproofSyncDryRun$targetSuffix", StateProofSyncTask::class.java) { task ->
+                task.group = TASK_GROUP
+                task.description = "Preview ${targetLabel}sync changes without writing files"
+                task.configureFrom(extension)
+                task.dryRunMode.set(true)
+                configureTaskForSyncInputs(project, task)
+                if (target == "android") {
+                    configureTaskForAndroidSingleMode(task, extension)
                 }
+            }
+        }
+
+        project.tasks.register("stateproofSyncAll") { task ->
+            task.group = TASK_GROUP
+            task.description = "Sync tests for configured state machine (all configured targets)"
+            task.dependsOn(allSyncTasks)
         }
 
         project.tasks.register("stateproofDiagrams", StateProofDiagramsTask::class.java) { task ->
@@ -342,8 +353,405 @@ class StateProofPlugin : Plugin<Project> {
         }
     }
 
+    private fun registerAgentTasks(project: Project, extension: StateProofExtension) {
+        project.tasks.register("stateproofScan", StateProofScanTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Analyze project integration profile and emit build/stateproof/agent/project-scan.json"
+            task.outputFile.set(extension.agentScanOutputFile)
+        }
+
+        project.tasks.register("stateproofWatch", StateProofWatchTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Watch configured paths and trigger StateProof sync/diagram/viewer actions"
+            task.watchMode.set(extension.watchMode)
+            task.watchDebounceMs.set(extension.watchDebounceMs)
+            task.watchPaths.set(extension.watchPaths)
+            task.classpathConfiguration.set(extension.classpathConfiguration)
+
+            task.syncCommands.set(buildWatchSyncCommands(project, extension))
+            task.diagramCommands.set(buildWatchDiagramCommands(extension))
+            task.viewerCommands.set(buildWatchViewerCommands(extension))
+            task.prepTaskNames.set(existingPrepTaskCandidates(project))
+            task.targetProjectPath.set(project.path)
+            configureTaskForSyncInputs(project, task)
+        }
+    }
+
+    private fun buildWatchSyncCommands(project: Project, extension: StateProofExtension): List<String> {
+        if (!extension.isSingleMode() && !extension.isMultiMode()) {
+            val args = listOf(
+                "sync-all",
+                "--report-dir",
+                project.layout.buildDirectory.dir("stateproof").get().asFile.absolutePath,
+            )
+            return listOf(
+                encodeWatchCommand(
+                    label = "stateproofSyncAll (auto-discovery)",
+                    mainClass = CLI_MAIN_CLASS,
+                    args = args,
+                )
+            )
+        }
+
+        if (extension.isSingleMode()) {
+            val (provider, isFactory) = extension.getSingleModeProvider()
+            return extension.testTargets.get().sorted().map { target ->
+                val isAndroid = target == "android"
+                val args = mutableListOf<String>()
+                args.add("sync")
+                args.addAll(commonProviderArgs(extension, provider, isFactory))
+                args.addAll(
+                    listOf(
+                        "--test-dir",
+                        if (isAndroid) {
+                            extension.androidTestDir.get().asFile.absolutePath
+                        } else {
+                            extension.testDir.get().asFile.absolutePath
+                        },
+                        "--report",
+                        extension.reportFile.get().asFile.absolutePath,
+                    )
+                )
+
+                if (isAndroid) {
+                    args.addAll(
+                        listOf(
+                            "--class-annotations",
+                            "@RunWith(AndroidJUnit4::class)",
+                            "--use-run-test",
+                        )
+                    )
+                }
+
+                val pkg = extension.testPackage.orNull
+                if (!pkg.isNullOrBlank()) {
+                    args.addAll(listOf("--package", pkg))
+                }
+                val cls = if (isAndroid) {
+                    extension.androidTestClassName.orNull
+                } else {
+                    extension.testClassName.orNull
+                }
+                if (!cls.isNullOrBlank()) {
+                    args.addAll(listOf("--class-name", cls))
+                }
+                val factory = extension.stateMachineFactory.orNull
+                if (!factory.isNullOrBlank()) {
+                    args.addAll(listOf("--factory", factory))
+                }
+                val eventPrefix = extension.eventClassPrefix.orNull
+                if (!eventPrefix.isNullOrBlank()) {
+                    args.addAll(listOf("--event-prefix", eventPrefix))
+                }
+
+                val imports = if (isAndroid) {
+                    extension.androidAdditionalImports.getOrElse(emptyList()) +
+                        extension.additionalImports.getOrElse(emptyList())
+                } else {
+                    extension.additionalImports.getOrElse(emptyList())
+                }
+                if (imports.isNotEmpty()) {
+                    args.addAll(listOf("--imports", imports.joinToString(",")))
+                }
+
+                encodeWatchCommand(
+                    label = if (isAndroid) "stateproofSyncAndroid" else "stateproofSync",
+                    mainClass = CLI_MAIN_CLASS,
+                    args = args,
+                )
+            }
+        }
+
+        return extension.stateMachines
+            .sortedBy { it.name }
+            .flatMap { config ->
+                config.testTargets.get().sorted().map { target ->
+                    val (provider, isFactory) = config.getEffectiveProvider()
+                    val isAndroid = target == "android"
+                    val effectivePackage = config.getEffectivePackage()
+                    val packagePath = effectivePackage.replace('.', '/')
+                    val testDir = if (isAndroid) {
+                        if (!config.androidTestDir.isPresent) {
+                            project.layout.projectDirectory
+                                .dir("src/androidTest/kotlin/$packagePath")
+                                .asFile
+                                .absolutePath
+                        } else {
+                            config.androidTestDir.get().asFile.absolutePath
+                        }
+                    } else {
+                        if (!config.testDir.isPresent) {
+                            project.layout.projectDirectory
+                                .dir("src/test/kotlin/$packagePath")
+                                .asFile
+                                .absolutePath
+                        } else {
+                            config.testDir.get().asFile.absolutePath
+                        }
+                    }
+                    val reportPath = extension.reportFile.get().asFile.parentFile
+                        .resolve("${config.name}-sync-report.txt")
+                        .absolutePath
+
+                    val args = mutableListOf<String>()
+                    args.add("sync")
+                    args.addAll(commonProviderArgs(config, provider, isFactory))
+                    args.addAll(listOf("--test-dir", testDir, "--report", reportPath))
+                    args.addAll(listOf("--package", effectivePackage))
+                    args.addAll(
+                        listOf(
+                            "--class-name",
+                            if (isAndroid) config.getEffectiveAndroidClassName() else config.getEffectiveClassName()
+                        )
+                    )
+
+                    val factoryExpr = config.stateMachineFactory.orNull
+                    if (!factoryExpr.isNullOrBlank()) {
+                        args.addAll(listOf("--factory", factoryExpr))
+                    }
+                    val eventPrefix = config.eventClassPrefix.orNull
+                    if (!eventPrefix.isNullOrBlank()) {
+                        args.addAll(listOf("--event-prefix", eventPrefix))
+                    }
+
+                    if (isAndroid) {
+                        args.addAll(
+                            listOf(
+                                "--class-annotations",
+                                "@RunWith(AndroidJUnit4::class)",
+                                "--use-run-test",
+                            )
+                        )
+                    }
+
+                    val imports = if (isAndroid) {
+                        config.androidAdditionalImports.getOrElse(emptyList()) +
+                            config.additionalImports.getOrElse(emptyList())
+                    } else {
+                        config.additionalImports.getOrElse(emptyList())
+                    }
+                    if (imports.isNotEmpty()) {
+                        args.addAll(listOf("--imports", imports.joinToString(",")))
+                    }
+
+                    val labelTarget = if (isAndroid) "Android" else "Jvm"
+                    encodeWatchCommand(
+                        label = "stateproofSync${config.name.replaceFirstChar { it.uppercase() }}$labelTarget",
+                        mainClass = CLI_MAIN_CLASS,
+                        args = args,
+                    )
+                }
+            }
+    }
+
+    private fun buildWatchDiagramCommands(extension: StateProofExtension): List<String> {
+        if (!extension.isSingleMode() && !extension.isMultiMode()) {
+            return listOf(
+                encodeWatchCommand(
+                    label = "stateproofDiagramsAll (auto-discovery)",
+                    mainClass = CLI_MAIN_CLASS,
+                    args = listOf(
+                        "diagrams-all",
+                        "--output-dir",
+                        extension.diagramOutputDir.get().asFile.absolutePath,
+                        "--format",
+                        "both",
+                    ),
+                )
+            )
+        }
+
+        if (extension.isSingleMode()) {
+            val (provider, isFactory) = extension.getSingleModeProvider()
+            val args = mutableListOf<String>()
+            args.add("diagrams")
+            args.addAll(commonProviderArgs(extension, provider, isFactory))
+            args.addAll(
+                listOf(
+                    "--output-dir",
+                    extension.diagramOutputDir.get().asFile.absolutePath,
+                    "--format",
+                    "both",
+                )
+            )
+            return listOf(
+                encodeWatchCommand(
+                    label = "stateproofDiagrams",
+                    mainClass = CLI_MAIN_CLASS,
+                    args = args,
+                )
+            )
+        }
+
+        return extension.stateMachines
+            .sortedBy { it.name }
+            .map { config ->
+                val (provider, isFactory) = config.getEffectiveProvider()
+                val args = mutableListOf<String>()
+                args.add("diagrams")
+                args.addAll(commonProviderArgs(config, provider, isFactory))
+                args.addAll(
+                    listOf(
+                        "--output-dir",
+                        extension.diagramOutputDir.get().asFile.absolutePath,
+                        "--name",
+                        config.name,
+                        "--format",
+                        "both",
+                    )
+                )
+                encodeWatchCommand(
+                    label = "stateproofDiagrams${config.name.replaceFirstChar { it.uppercase() }}",
+                    mainClass = CLI_MAIN_CLASS,
+                    args = args,
+                )
+            }
+    }
+
+    private fun buildWatchViewerCommands(extension: StateProofExtension): List<String> {
+        if (!extension.isSingleMode() && !extension.isMultiMode()) {
+            return listOf(
+                encodeWatchCommand(
+                    label = "stateproofViewerAll (auto-discovery)",
+                    mainClass = VIEWER_CLI_MAIN_CLASS,
+                    args = listOf(
+                        "viewer-all",
+                        "--output-dir",
+                        extension.viewerOutputDir.get().asFile.absolutePath,
+                        "--layout",
+                        extension.viewerLayout.get(),
+                        "--include-json-sidecar",
+                        extension.viewerIncludeJsonSidecar.get().toString(),
+                    ),
+                )
+            )
+        }
+
+        if (extension.isSingleMode()) {
+            val (provider, isFactory) = extension.getSingleModeProvider()
+            val args = mutableListOf<String>()
+            args.add("viewer")
+            args.addAll(
+                listOf(
+                    "--provider",
+                    provider,
+                    "--initial-state",
+                    extension.initialState.get(),
+                    "--output-dir",
+                    extension.viewerOutputDir.get().asFile.absolutePath,
+                    "--layout",
+                    extension.viewerLayout.get(),
+                    "--include-json-sidecar",
+                    extension.viewerIncludeJsonSidecar.get().toString(),
+                )
+            )
+            if (isFactory) {
+                args.add("--is-factory")
+            }
+            return listOf(
+                encodeWatchCommand(
+                    label = "stateproofViewer",
+                    mainClass = VIEWER_CLI_MAIN_CLASS,
+                    args = args,
+                )
+            )
+        }
+
+        return extension.stateMachines
+            .sortedBy { it.name }
+            .map { config ->
+                val (provider, isFactory) = config.getEffectiveProvider()
+                val args = mutableListOf<String>()
+                args.add("viewer")
+                args.addAll(
+                    listOf(
+                        "--provider",
+                        provider,
+                        "--initial-state",
+                        config.initialState.get(),
+                        "--output-dir",
+                        extension.viewerOutputDir.get().asFile.absolutePath,
+                        "--layout",
+                        extension.viewerLayout.get(),
+                        "--include-json-sidecar",
+                        extension.viewerIncludeJsonSidecar.get().toString(),
+                        "--name",
+                        config.name,
+                    )
+                )
+                if (isFactory) {
+                    args.add("--is-factory")
+                }
+                encodeWatchCommand(
+                    label = "stateproofViewer${config.name.replaceFirstChar { it.uppercase() }}",
+                    mainClass = VIEWER_CLI_MAIN_CLASS,
+                    args = args,
+                )
+            }
+    }
+
+    private fun commonProviderArgs(
+        extension: StateProofExtension,
+        provider: String,
+        isFactory: Boolean,
+    ): List<String> {
+        val args = mutableListOf(
+            "--provider",
+            provider,
+            "--initial-state",
+            extension.initialState.get(),
+            "--max-visits",
+            extension.maxVisitsPerState.get().toString(),
+        )
+        val maxDepth = extension.maxPathDepth.get()
+        if (maxDepth != -1) {
+            args.addAll(listOf("--max-depth", maxDepth.toString()))
+        }
+        if (isFactory) {
+            args.add("--is-factory")
+        }
+        return args
+    }
+
+    private fun commonProviderArgs(
+        config: StateMachineConfig,
+        provider: String,
+        isFactory: Boolean,
+    ): List<String> {
+        val args = mutableListOf(
+            "--provider",
+            provider,
+            "--initial-state",
+            config.initialState.get(),
+            "--max-visits",
+            config.maxVisitsPerState.get().toString(),
+        )
+        val maxDepth = config.maxPathDepth.get()
+        if (maxDepth != -1) {
+            args.addAll(listOf("--max-depth", maxDepth.toString()))
+        }
+        if (isFactory) {
+            args.add("--is-factory")
+        }
+        return args
+    }
+
+    private fun encodeWatchCommand(label: String, mainClass: String, args: List<String>): String {
+        val parts = mutableListOf(label, mainClass)
+        parts.addAll(args)
+        return parts.joinToString(WATCH_COMMAND_SEPARATOR)
+    }
+
     private fun configureTaskForSyncInputs(project: Project, task: org.gradle.api.Task) {
-        val prepTaskCandidates = listOf(
+        existingPrepTaskCandidates(project).forEach { candidate ->
+            if (project.tasks.findByName(candidate) != null) {
+                task.dependsOn(candidate)
+            }
+        }
+    }
+
+    private fun existingPrepTaskCandidates(project: Project): List<String> {
+        val candidates = listOf(
             // Android/KSP variants (needed for auto-discovery registries + compiled classes)
             "kspDebugKotlin",
             "compileDebugKotlin",
@@ -355,12 +763,7 @@ class StateProofPlugin : Plugin<Project> {
             // Broad fallback for plain JVM projects
             "classes",
         )
-
-        prepTaskCandidates.forEach { candidate ->
-            if (project.tasks.findByName(candidate) != null) {
-                task.dependsOn(candidate)
-            }
-        }
+        return candidates.filter { project.tasks.findByName(it) != null }
     }
 
 
@@ -368,5 +771,6 @@ class StateProofPlugin : Plugin<Project> {
         const val TASK_GROUP = "stateproof"
         const val CLI_MAIN_CLASS = "io.stateproof.cli.StateProofCli"
         const val VIEWER_CLI_MAIN_CLASS = "io.stateproof.viewer.cli.StateProofViewerCli"
+        const val WATCH_COMMAND_SEPARATOR = "\u001F"
     }
 }

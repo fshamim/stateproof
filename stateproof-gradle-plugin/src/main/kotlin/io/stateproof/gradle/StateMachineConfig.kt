@@ -196,8 +196,8 @@ abstract class StateMachineConfig @Inject constructor(
     /**
      * Derives the package name from the provider FQN.
      *
-     * Example: "com.mubea.icages.main.MainStateMachineKt#getMainStateMachine"
-     *        → "com.mubea.icages.main"
+     * Example: "com.example.main.MainStateMachineKt#getMainStateMachine"
+     *        → "com.example.main"
      */
     fun getEffectivePackage(): String {
         val explicit = testPackage.orNull
@@ -213,7 +213,7 @@ abstract class StateMachineConfig @Inject constructor(
     /**
      * Derives the test class name from the provider FQN.
      *
-     * Example: "com.mubea.icages.main.MainStateMachineKt#getMainStateMachine"
+     * Example: "com.example.main.MainStateMachineKt#getMainStateMachine"
      *        → "GeneratedMainStateMachineTest"
      */
     fun getEffectiveClassName(): String {
@@ -258,4 +258,3 @@ abstract class StateMachineConfig @Inject constructor(
         }
     }
 }
-

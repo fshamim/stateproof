@@ -217,6 +217,30 @@ abstract class StateProofExtension(private val project: Project) {
     abstract val viewerIncludeJsonSidecar: Property<Boolean>
 
     /**
+     * Output file for agent project scan report.
+     * Default: build/stateproof/agent/project-scan.json
+     */
+    abstract val agentScanOutputFile: RegularFileProperty
+
+    /**
+     * Watch mode action group.
+     * Valid values: tests | diagram | viewer | all
+     * Default: all
+     */
+    abstract val watchMode: Property<String>
+
+    /**
+     * Debounce interval for stateproofWatch in milliseconds.
+     * Default: 1200
+     */
+    abstract val watchDebounceMs: Property<Long>
+
+    /**
+     * Relative or absolute paths monitored by stateproofWatch.
+     */
+    abstract val watchPaths: ListProperty<String>
+
+    /**
      * Whether to run in dry-run mode (preview changes without writing).
      * Default: false
      */
@@ -269,6 +293,18 @@ abstract class StateProofExtension(private val project: Project) {
         viewerOutputDir.convention(project.layout.buildDirectory.dir("stateproof/viewer"))
         viewerLayout.convention("breadthfirst")
         viewerIncludeJsonSidecar.convention(true)
+        agentScanOutputFile.convention(project.layout.buildDirectory.file("stateproof/agent/project-scan.json"))
+        watchMode.convention("all")
+        watchDebounceMs.convention(1200L)
+        watchPaths.convention(
+            listOf(
+                "src/main",
+                "src/commonMain",
+                "src/androidMain",
+                "build.gradle.kts",
+                "settings.gradle.kts",
+            )
+        )
         dryRun.convention(false)
         classpathConfiguration.convention("")
         autoDiscovery.convention(true)

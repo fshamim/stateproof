@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> Welcome: OnLaunch
+    Welcome --> AuthGate: OnContinue
+    AuthGate --> Home: OnAuthSucceeded
+    AuthGate --> AuthGate: OnAuthFailed [retryAllowed]
+    AuthGate --> Locked: OnAuthFailed [retryLimitReached]
+    Home --> Details: OnItemSelected
+    Details --> Saving: OnSave
+    Saving --> Details: emits OnSaveSucceeded
+    Saving --> ErrorSheet: emits OnSaveFailed
+    ErrorSheet --> Details: OnRetry
+    ErrorSheet --> Home: OnCancel

@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> Idle: OnOpen
+    Idle --> Loading: OnRefresh
+    Loading --> Ready: emits OnDataLoaded
+    Loading --> PartialReady: emits OnPartialDataLoaded
+    Loading --> RecoverableError: emits OnTransientFailure
+    Loading --> FatalError: emits OnPermanentFailure
+    RecoverableError --> Loading: OnRetry
+    RecoverableError --> Idle: OnBack
+    PartialReady --> Loading: OnRefresh
+    Ready --> Idle: OnClose
+    FatalError --> Idle: OnRestart

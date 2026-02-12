@@ -6,7 +6,7 @@ import io.stateproof.graph.StateTransitionInfo
 /**
  * Simple path enumerator that works with StateInfo maps.
  *
- * This is the same algorithm used by iCages StateTestGenerator,
+ * This is the same core algorithm as the original app-specific state test generator,
  * adapted for StateProof. It doesn't require reflection and works
  * with a pre-built map of state transitions.
  *
