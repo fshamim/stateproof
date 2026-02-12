@@ -56,6 +56,31 @@ val stateMachine = stateMachine<States, Events>(States.Initial) {
 val testCases = stateMachine.enumerateAllPaths()
 ```
 
+## JVM StateGraph Introspection
+
+StateProof now provides a JVM-first rich graph model for introspection:
+
+```kotlin
+import io.stateproof.graph.toStateGraph
+
+val graph = stateMachine.toStateGraph()
+```
+
+`StateGraph` contains:
+- `states`: stable state nodes (`id`, `displayName`, `qualifiedName`, `groupId`, `isInitial`)
+- `groups`: hierarchy groups inferred from sealed ancestry
+- `transitions`: edge metadata (`guardLabel`, `emittedEvents`, and unresolved-target markers)
+
+### Grouping Behavior
+
+- If states are organized through nested sealed hierarchy, groups are auto-detected from that hierarchy.
+- For flat state machines (no nested sealed path), all states are assigned to synthetic `General` (`group:General`).
+
+### JVM Scope
+
+`toStateGraph()` is currently JVM-first and intended for Android/JVM analysis workflows.
+Existing `toStateInfo()` and sync/test generation APIs remain backward compatible.
+
 ## Gradle Plugin
 
 StateProof uses **sync-only** to safely manage your test files.
