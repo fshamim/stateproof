@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> CheckoutStart
+    CheckoutStart --> PaymentMethodSelection: OnCheckoutStarted
+    PaymentMethodSelection --> CardAuth: OnPayByCard
+    PaymentMethodSelection --> BankTransfer: OnPayByBank
+    PaymentMethodSelection --> WalletPay: OnPayByWallet
+    CardAuth --> Completed: OnCardApproved
+    CardAuth --> Failed: OnCardDeclined
+    BankTransfer --> Completed: OnBankApproved
+    BankTransfer --> Failed: OnBankDeclined
+    WalletPay --> Completed: OnWalletApproved
+    WalletPay --> Failed: OnWalletDeclined

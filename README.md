@@ -13,32 +13,9 @@ This reframes the testing workflow:
 
 StateProof does not replace unit, integration, visual, or runtime testing; it provides near-exhaustive coverage for **modeled UI behavior**.
 
-## Visual Overview
+## Overview
 
 ### Workflow Comparison
-
-```mermaid
-flowchart LR
-    subgraph Traditional["Traditional Workflow"]
-        T1["Implement feature"] --> T2["Write tests manually"]
-        T2 --> T3["Unknown path gaps"]
-    end
-
-    subgraph TDD["TDD Workflow"]
-        D1["Write failing test"] --> D2["Make test pass"]
-        D2 --> D3["Refactor"]
-        D3 --> D1
-        D2 --> D4["Strong local confidence"]
-    end
-
-    subgraph StateProof["StateProof Workflow"]
-        S1["Model states + events"] --> S2["Deterministic state graph"]
-        S2 --> S3["Enumerate reachable paths (DFS)"]
-        S3 --> S4["Generate path-based tests"]
-        S4 --> S5["Sync suite on graph changes"]
-        S5 --> S6["Done signal for modeled behavior"]
-    end
-```
 
 | Approach | Goal unit | Feedback loop | Done signal | Typical blind spot |
 |----------|-----------|---------------|-------------|--------------------|
@@ -271,10 +248,10 @@ val transferMachine = stateMachine<TransferState, TransferEvent>(TransferState.T
 
 For this modeled workflow, StateProof can generate tests with **100% path coverage of the modeled transaction state graph**. Integration, infrastructure, and visual correctness still require complementary test layers.
 Canonical Mermaid sources:
-- `docs/diagrams/value-proposition.mmd`
 - `docs/diagrams/screens-as-states.mmd`
 - `docs/diagrams/runtime-event-processing.mmd`
 - `docs/diagrams/bank-transaction-recovery.mmd`
+- `docs/diagrams/generated-tests-simple-machine.mmd`
 
 ### Why This Works
 
@@ -283,6 +260,154 @@ Canonical Mermaid sources:
 - sync-safe test maintenance as transitions and guards evolve
 - clear behavioral contract that complements TDD and manual exploratory testing
 - AI-first onboarding with scan -> classify -> apply -> verify
+
+## Generated Exhaustive Tests (Core Value)
+
+### Simple Machine Example (Generates 6 Tests)
+
+```mermaid
+stateDiagram-v2
+    [*] --> CheckoutStart
+    CheckoutStart --> PaymentMethodSelection: OnCheckoutStarted
+    PaymentMethodSelection --> CardAuth: OnPayByCard
+    PaymentMethodSelection --> BankTransfer: OnPayByBank
+    PaymentMethodSelection --> WalletPay: OnPayByWallet
+    CardAuth --> Completed: OnCardApproved
+    CardAuth --> Failed: OnCardDeclined
+    BankTransfer --> Completed: OnBankApproved
+    BankTransfer --> Failed: OnBankDeclined
+    WalletPay --> Completed: OnWalletApproved
+    WalletPay --> Failed: OnWalletDeclined
+```
+
+This graph has 3 payment branches x 2 outcomes, so StateProof deterministically generates exactly 6 terminal-path tests.
+
+### Modeled State + Event Snippet
+
+```kotlin
+sealed class CheckoutState {
+    object CheckoutStart : CheckoutState()
+    object PaymentMethodSelection : CheckoutState()
+    object CardAuth : CheckoutState()
+    object BankTransfer : CheckoutState()
+    object WalletPay : CheckoutState()
+    object Completed : CheckoutState()
+    object Failed : CheckoutState()
+}
+
+sealed class CheckoutEvent {
+    object OnCheckoutStarted : CheckoutEvent()
+    object OnPayByCard : CheckoutEvent()
+    object OnPayByBank : CheckoutEvent()
+    object OnPayByWallet : CheckoutEvent()
+    object OnCardApproved : CheckoutEvent()
+    object OnCardDeclined : CheckoutEvent()
+    object OnBankApproved : CheckoutEvent()
+    object OnBankDeclined : CheckoutEvent()
+    object OnWalletApproved : CheckoutEvent()
+    object OnWalletDeclined : CheckoutEvent()
+}
+
+val checkoutMachine = stateMachine<CheckoutState, CheckoutEvent>(CheckoutState.CheckoutStart) {
+    // Deterministic event-to-transition mapping defines the traversal space.
+    state<CheckoutState.CheckoutStart> {
+        on<CheckoutEvent.OnCheckoutStarted> { transitionTo(CheckoutState.PaymentMethodSelection) }
+    }
+
+    state<CheckoutState.PaymentMethodSelection> {
+        on<CheckoutEvent.OnPayByCard> { transitionTo(CheckoutState.CardAuth) }
+        on<CheckoutEvent.OnPayByBank> { transitionTo(CheckoutState.BankTransfer) }
+        on<CheckoutEvent.OnPayByWallet> { transitionTo(CheckoutState.WalletPay) }
+    }
+
+    state<CheckoutState.CardAuth> {
+        on<CheckoutEvent.OnCardApproved> { transitionTo(CheckoutState.Completed) }
+        on<CheckoutEvent.OnCardDeclined> { transitionTo(CheckoutState.Failed) }
+    }
+
+    state<CheckoutState.BankTransfer> {
+        on<CheckoutEvent.OnBankApproved> { transitionTo(CheckoutState.Completed) }
+        on<CheckoutEvent.OnBankDeclined> { transitionTo(CheckoutState.Failed) }
+    }
+
+    state<CheckoutState.WalletPay> {
+        on<CheckoutEvent.OnWalletApproved> { transitionTo(CheckoutState.Completed) }
+        on<CheckoutEvent.OnWalletDeclined> { transitionTo(CheckoutState.Failed) }
+    }
+}
+```
+
+### How Generated Tests Look
+
+Example generated test names (hashes shown as examples):
+- `_3_7A1C_from_CheckoutStart_to_Completed` (card approved path)
+- `_3_84F1_from_CheckoutStart_to_Failed` (card declined path)
+- `_3_1D2E_from_CheckoutStart_to_Completed` (bank approved path)
+- `_3_55B0_from_CheckoutStart_to_Failed` (bank declined path)
+- `_3_C8A9_from_CheckoutStart_to_Completed` (wallet approved path)
+- `_3_90D4_from_CheckoutStart_to_Failed` (wallet declined path)
+
+```kotlin
+@StateProofGenerated(
+    pathHash = "7A1C",
+    generatedAt = "2026-02-13T12:00:00Z",
+    schemaVersion = 1,
+)
+@Test
+fun `_3_7A1C_from_CheckoutStart_to_Completed`() = runBlocking {
+    //CheckoutStart_OnCheckoutStarted_PaymentMethodSelection_OnPayByCard_CardAuth_OnCardApproved_Completed
+
+    // ▼▼▼ STATEPROOF:EXPECTED - Do not edit below this line ▼▼▼
+    val expectedTransitions = listOf(
+        "CheckoutStart_OnCheckoutStarted_PaymentMethodSelection",
+        "PaymentMethodSelection_OnPayByCard_CardAuth",
+        "CardAuth_OnCardApproved_Completed",
+    )
+    // ▲▲▲ STATEPROOF:END ▲▲▲
+
+    // ══════════════════════════════════════════════════════════
+    // User implementation below (preserved across regeneration)
+    // ══════════════════════════════════════════════════════════
+
+    // TODO: Implement test
+}
+```
+
+### Why Your Test Code Stays Safe During Sync
+
+- Sync updates only the generated expected-transition block.
+- Sync preserves your implementation section below the markers.
+- Removed traversal paths are marked obsolete, not deleted.
+- User-written test code is never auto-deleted.
+
+```kotlin
+@StateProofObsolete(
+    reason = "Path removed",
+    markedAt = "2026-02-13T12:00:00Z",
+    originalPath = "CheckoutStart -> PaymentMethodSelection -> CardAuth -> Failed",
+)
+@Ignore("StateProof: Path obsolete since 2026-02-13T12:00:00Z - review and delete manually")
+```
+
+### TransitionLog Verification of Traversal
+
+```kotlin
+val sm = createCheckoutStateMachine()
+
+sm.onEvent(CheckoutEvent.OnCheckoutStarted)
+sm.onEvent(CheckoutEvent.OnPayByCard)
+sm.onEvent(CheckoutEvent.OnCardApproved)
+sm.awaitIdle()
+
+assertContentEquals(expectedTransitions, sm.getTransitionLog())
+sm.close()
+```
+
+This verifies that runtime traversal exactly matches the generated expected path.
+
+### Scope Statement
+
+StateProof provides **100% path coverage of the modeled state graph**. Integration, infrastructure, and visual correctness still require complementary test layers.
 
 ## AI Agent Quickstart (3-Step)
 
