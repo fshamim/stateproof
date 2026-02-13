@@ -50,62 +50,114 @@ flowchart LR
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Dashboard: OnAppStart
-    Dashboard --> ImportProject: OnImportRequested
-    ImportProject --> Dashboard: OnBack
-    ImportProject --> Importing: OnSubmit [projectId != empty]
-    ImportProject --> ImportProject: OnSubmit [projectId is empty]
-    Importing --> ProjectReady: emits OnImportSucceeded
-    Importing --> ImportProject: emits OnImportFailed
+    [*] --> Login: OnAppStart
+    Login --> Authenticating: OnLoginSubmitted(username, password)
+    Authenticating --> LoadingHomeData: emits OnAuthSucceeded(token)
+    Authenticating --> LoginError: emits OnAuthFailed(reason)
+    LoadingHomeData --> Home: emits OnHomeDataLoaded(summary)
+    LoadingHomeData --> LoginError: emits OnHomeDataLoadFailed(reason)
+    LoginError --> Login: OnRetryLogin
+    Home --> Login: OnLogout
 ```
 
 ### Quick Start for This Flow (StateProof DSL)
 
 ```kotlin
-sealed class AppState {
-    object Dashboard : AppState()
-    object ImportProject : AppState()
-    object Importing : AppState()
-    object ProjectReady : AppState()
+data class HomeSummary(
+    val firstName: String,
+    val unreadCount: Int,
+)
+
+sealed class AuthState {
+    object Login : AuthState()
+    object Authenticating : AuthState()
+    object LoadingHomeData : AuthState()
+    data class Home(val summary: HomeSummary) : AuthState()
+    data class LoginError(val reason: String) : AuthState()
 }
 
-sealed class AppEvent {
-    object OnAppStart : AppEvent()
-    object OnImportRequested : AppEvent()
-    object OnBack : AppEvent()
-    data class OnSubmit(val projectId: String) : AppEvent() // data class event
-    object OnImportSucceeded : AppEvent()
-    data class OnImportFailed(val reason: String) : AppEvent() // data class event
+sealed class AuthEvent {
+    object OnAppStart : AuthEvent()
+    data class OnLoginSubmitted(val username: String, val password: String) : AuthEvent()
+    data class OnAuthSucceeded(val token: String) : AuthEvent()
+    data class OnAuthFailed(val reason: String) : AuthEvent()
+    data class OnHomeDataLoaded(val summary: HomeSummary) : AuthEvent()
+    data class OnHomeDataLoadFailed(val reason: String) : AuthEvent()
+    object OnRetryLogin : AuthEvent()
+    object OnLogout : AuthEvent()
 }
 
-val machine = stateMachine<AppState, AppEvent>(AppState.Dashboard) {
-    state<AppState.Dashboard> {
-        on<AppEvent.OnImportRequested> { transitionTo(AppState.ImportProject) }
-    }
+sealed class AuthResult {
+    data class Success(val token: String) : AuthResult()
+    data class Failure(val reason: String) : AuthResult()
+}
 
-    state<AppState.ImportProject> {
-        on<AppEvent.OnBack> { transitionTo(AppState.Dashboard) }
-        on<AppEvent.OnSubmit> {
-            condition("projectId != empty") { _, event -> event.projectId.isNotBlank() } then {
-                transitionTo(AppState.Importing)
+sealed class HomeLoadResult {
+    data class Success(val summary: HomeSummary) : HomeLoadResult()
+    data class Failure(val reason: String) : HomeLoadResult()
+}
+
+interface AuthRepository {
+    suspend fun login(username: String, password: String): AuthResult
+}
+
+interface HomeRepository {
+    suspend fun loadHomeSummary(token: String): HomeLoadResult
+}
+
+val authRepository: AuthRepository = TODO()
+val homeRepository: HomeRepository = TODO()
+
+val machine = stateMachine<AuthState, AuthEvent>(AuthState.Login) {
+    state<AuthState.Login> {
+        on<AuthEvent.OnLoginSubmitted> {
+            // Guarded branch keeps invalid input as a deterministic self-transition.
+            condition("credentials present") { _, event ->
+                event.username.isNotBlank() && event.password.isNotBlank()
+            } then {
+                transitionTo(AuthState.Authenticating)
                 sideEffect { event ->
-                    if (event.projectId.endsWith(".json")) {
-                        AppEvent.OnImportSucceeded
-                    } else {
-                        AppEvent.OnImportFailed("invalid file extension")
+                    when (val result = authRepository.login(event.username, event.password)) {
+                        is AuthResult.Success -> AuthEvent.OnAuthSucceeded(result.token)
+                        is AuthResult.Failure -> AuthEvent.OnAuthFailed(result.reason)
                     }
                 } emits (
-                    "import_succeeded" to AppEvent.OnImportSucceeded::class,
-                    "import_failed" to AppEvent.OnImportFailed::class,
+                    "auth_succeeded" to AuthEvent.OnAuthSucceeded::class,
+                    "auth_failed" to AuthEvent.OnAuthFailed::class,
                 )
             }
-            otherwise { doNotTransition() } // matches self-transition case for empty projectId
+            otherwise { doNotTransition() }
         }
     }
 
-    state<AppState.Importing> {
-        on<AppEvent.OnImportSucceeded> { transitionTo(AppState.ProjectReady) }
-        on<AppEvent.OnImportFailed> { transitionTo(AppState.ImportProject) }
+    state<AuthState.Authenticating> {
+        on<AuthEvent.OnAuthSucceeded> {
+            transitionTo(AuthState.LoadingHomeData)
+            // Side effect emits the next backend result event into the state machine.
+            sideEffect { event ->
+                when (val result = homeRepository.loadHomeSummary(event.token)) {
+                    is HomeLoadResult.Success -> AuthEvent.OnHomeDataLoaded(result.summary)
+                    is HomeLoadResult.Failure -> AuthEvent.OnHomeDataLoadFailed(result.reason)
+                }
+            } emits (
+                "home_data_loaded" to AuthEvent.OnHomeDataLoaded::class,
+                "home_data_failed" to AuthEvent.OnHomeDataLoadFailed::class,
+            )
+        }
+        on<AuthEvent.OnAuthFailed> { event -> transitionTo(AuthState.LoginError(event.reason)) }
+    }
+
+    state<AuthState.LoadingHomeData> {
+        on<AuthEvent.OnHomeDataLoaded> { event -> transitionTo(AuthState.Home(event.summary)) }
+        on<AuthEvent.OnHomeDataLoadFailed> { event -> transitionTo(AuthState.LoginError(event.reason)) }
+    }
+
+    state<AuthState.LoginError> {
+        on<AuthEvent.OnRetryLogin> { transitionTo(AuthState.Login) }
+    }
+
+    state<AuthState.Home> {
+        on<AuthEvent.OnLogout> { transitionTo(AuthState.Login) }
     }
 }
 ```
@@ -120,27 +172,27 @@ sequenceDiagram
     participant P as "Event Processor Loop"
     participant FX as "Transition SideEffect"
 
-    UI->>SM: onEvent(OnSubmit(projectId))
-    SM->>Q: addLast(OnSubmit)
+    UI->>SM: onEvent(OnLoginSubmitted(alice))
+    SM->>Q: addLast(OnLoginSubmitted(alice))
     SM->>P: signal processing
 
-    UI->>SM: onEvent(OnRefresh)
-    SM->>Q: addLast(OnRefresh)
+    UI->>SM: onEvent(OnLoginSubmitted(bob))
+    SM->>Q: addLast(OnLoginSubmitted(bob))
     SM->>P: signal processing
 
-    P->>Q: removeFirst() returns OnSubmit
+    P->>Q: removeFirst() returns OnLoginSubmitted(alice)
     P->>P: apply transition (state updated)
-    P->>FX: run sideEffect(OnSubmit)
-    FX-->>P: emit OnImportSucceeded
-    P->>Q: addFirst(OnImportSucceeded)
+    P->>FX: run sideEffect(OnLoginSubmitted(alice))
+    FX-->>P: emit OnAuthSucceeded(token)
+    P->>Q: addFirst(OnAuthSucceeded(token))
     P->>P: signal processing
 
     Note over Q: Emitted event is inserted at the queue front
 
-    P->>Q: removeFirst() returns OnImportSucceeded
+    P->>Q: removeFirst() returns OnAuthSucceeded(token)
     P->>P: process emitted event first
 
-    P->>Q: removeFirst() returns OnRefresh
+    P->>Q: removeFirst() returns OnLoginSubmitted(bob)
     P->>P: process next queued event
 ```
 
@@ -148,50 +200,81 @@ sequenceDiagram
 - Side-effect emitted event is pushed to queue front.
 - This priority applies within modeled runtime behavior and does not replace integration/visual tests.
 
-### Real-World Style Examples (Anonymized)
-
-Feature journey with guarded transitions and side-effect emitted events:
+### Complex Workflow Example: Bank Transaction Recovery
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Welcome: OnLaunch
-    Welcome --> AuthGate: OnContinue
-    AuthGate --> Home: OnAuthSucceeded
-    AuthGate --> AuthGate: OnAuthFailed [retryAllowed]
-    AuthGate --> Locked: OnAuthFailed [retryLimitReached]
-    Home --> Details: OnItemSelected
-    Details --> Saving: OnSave
-    Saving --> Details: emits OnSaveSucceeded
-    Saving --> ErrorSheet: emits OnSaveFailed
-    ErrorSheet --> Details: OnRetry
-    ErrorSheet --> Home: OnCancel
+    [*] --> TransferForm: OnOpenTransfer
+    TransferForm --> SubmittingTransfer: OnSubmitTransfer(request)
+    SubmittingTransfer --> AwaitingSettlement: emits OnTransferSubmitted(reference)
+    SubmittingTransfer --> TransferFailed: emits OnTransferRejected(reason)
+    SubmittingTransfer --> RecoveryCheck: emits OnNetworkLost(reference)
+    AwaitingSettlement --> TransferCompleted: emits OnSettlementConfirmed(receiptId)
+    AwaitingSettlement --> RecoveryCheck: emits OnSettlementTimeout(reference)
+    RecoveryCheck --> AwaitingSettlement: emits OnBankConfirmed(reference)
+    RecoveryCheck --> TransferCanceled: emits OnBankCanceled(reference)
+    RecoveryCheck --> ManualReview: emits OnBankStatusUnknown(reason)
+    ManualReview --> RecoveryCheck: OnRetryRecovery(reference)
+    TransferFailed --> TransferForm: OnRetry
+    TransferCanceled --> TransferForm: OnRetry
 ```
 
-Recovery/error branching flow:
+```kotlin
+// TransferState and TransferEvent carry reference/reason payloads for each branch.
+val transferMachine = stateMachine<TransferState, TransferEvent>(TransferState.TransferForm) {
+    state<TransferState.TransferForm> {
+        on<TransferEvent.OnSubmitTransfer> {
+            transitionTo(TransferState.SubmittingTransfer)
+            // Side effect emits submit outcomes from the bank API.
+            sideEffect { event ->
+                when (val result = bankApi.submit(event.request)) {
+                    is SubmitResult.Accepted -> TransferEvent.OnTransferSubmitted(result.reference)
+                    is SubmitResult.Rejected -> TransferEvent.OnTransferRejected(result.reason)
+                    is SubmitResult.NetworkLost -> TransferEvent.OnNetworkLost(result.reference)
+                }
+            } emits (
+                "transfer_submitted" to TransferEvent.OnTransferSubmitted::class,
+                "transfer_rejected" to TransferEvent.OnTransferRejected::class,
+                "network_lost" to TransferEvent.OnNetworkLost::class,
+            )
+        }
+    }
 
-```mermaid
-stateDiagram-v2
-    [*] --> Idle: OnOpen
-    Idle --> Loading: OnRefresh
-    Loading --> Ready: emits OnDataLoaded
-    Loading --> PartialReady: emits OnPartialDataLoaded
-    Loading --> RecoverableError: emits OnTransientFailure
-    Loading --> FatalError: emits OnPermanentFailure
-    RecoverableError --> Loading: OnRetry
-    RecoverableError --> Idle: OnBack
-    PartialReady --> Loading: OnRefresh
-    Ready --> Idle: OnClose
-    FatalError --> Idle: OnRestart
+    state<TransferState.SubmittingTransfer> {
+        on<TransferEvent.OnTransferSubmitted> { event ->
+            transitionTo(TransferState.AwaitingSettlement(event.reference))
+        }
+        on<TransferEvent.OnNetworkLost> { event ->
+            transitionTo(TransferState.RecoveryCheck(event.reference))
+        }
+    }
+
+    state<TransferState.RecoveryCheck> {
+        on<TransferEvent.OnRetryRecovery> {
+            doNotTransition()
+            // Recovery side effect asks the bank for final confirmation or cancelation.
+            sideEffect { event ->
+                when (val status = bankApi.checkStatus(event.reference)) {
+                    is StatusResult.Confirmed -> TransferEvent.OnBankConfirmed(event.reference)
+                    is StatusResult.Canceled -> TransferEvent.OnBankCanceled(event.reference)
+                    is StatusResult.Unknown -> TransferEvent.OnBankStatusUnknown(status.reason)
+                }
+            } emits (
+                "bank_confirmed" to TransferEvent.OnBankConfirmed::class,
+                "bank_canceled" to TransferEvent.OnBankCanceled::class,
+                "bank_status_unknown" to TransferEvent.OnBankStatusUnknown::class,
+            )
+        }
+    }
+}
 ```
 
-Patterns in these examples are derived from production-style apps with anonymized names.
-
+For this modeled workflow, StateProof can generate tests with **100% path coverage of the modeled transaction state graph**. Integration, infrastructure, and visual correctness still require complementary test layers.
 Canonical Mermaid sources:
 - `docs/diagrams/value-proposition.mmd`
 - `docs/diagrams/screens-as-states.mmd`
 - `docs/diagrams/runtime-event-processing.mmd`
-- `docs/diagrams/demo-journey-anonymized.mmd`
-- `docs/diagrams/demo-recovery-anonymized.mmd`
+- `docs/diagrams/bank-transaction-recovery.mmd`
 
 ### Why This Works
 

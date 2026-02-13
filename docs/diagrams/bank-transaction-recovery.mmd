@@ -1,0 +1,14 @@
+stateDiagram-v2
+    [*] --> TransferForm: OnOpenTransfer
+    TransferForm --> SubmittingTransfer: OnSubmitTransfer(request)
+    SubmittingTransfer --> AwaitingSettlement: emits OnTransferSubmitted(reference)
+    SubmittingTransfer --> TransferFailed: emits OnTransferRejected(reason)
+    SubmittingTransfer --> RecoveryCheck: emits OnNetworkLost(reference)
+    AwaitingSettlement --> TransferCompleted: emits OnSettlementConfirmed(receiptId)
+    AwaitingSettlement --> RecoveryCheck: emits OnSettlementTimeout(reference)
+    RecoveryCheck --> AwaitingSettlement: emits OnBankConfirmed(reference)
+    RecoveryCheck --> TransferCanceled: emits OnBankCanceled(reference)
+    RecoveryCheck --> ManualReview: emits OnBankStatusUnknown(reason)
+    ManualReview --> RecoveryCheck: OnRetryRecovery(reference)
+    TransferFailed --> TransferForm: OnRetry
+    TransferCanceled --> TransferForm: OnRetry

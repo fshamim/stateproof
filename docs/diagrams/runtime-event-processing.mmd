@@ -5,25 +5,25 @@ sequenceDiagram
     participant P as "Event Processor Loop"
     participant FX as "Transition SideEffect"
 
-    UI->>SM: onEvent(OnSubmit(projectId))
-    SM->>Q: addLast(OnSubmit)
+    UI->>SM: onEvent(OnLoginSubmitted(alice))
+    SM->>Q: addLast(OnLoginSubmitted(alice))
     SM->>P: signal processing
 
-    UI->>SM: onEvent(OnRefresh)
-    SM->>Q: addLast(OnRefresh)
+    UI->>SM: onEvent(OnLoginSubmitted(bob))
+    SM->>Q: addLast(OnLoginSubmitted(bob))
     SM->>P: signal processing
 
-    P->>Q: removeFirst() returns OnSubmit
+    P->>Q: removeFirst() returns OnLoginSubmitted(alice)
     P->>P: apply transition (state updated)
-    P->>FX: run sideEffect(OnSubmit)
-    FX-->>P: emit OnImportSucceeded
-    P->>Q: addFirst(OnImportSucceeded)
+    P->>FX: run sideEffect(OnLoginSubmitted(alice))
+    FX-->>P: emit OnAuthSucceeded(token)
+    P->>Q: addFirst(OnAuthSucceeded(token))
     P->>P: signal processing
 
     Note over Q: Emitted event is inserted at the queue front
 
-    P->>Q: removeFirst() returns OnImportSucceeded
+    P->>Q: removeFirst() returns OnAuthSucceeded(token)
     P->>P: process emitted event first
 
-    P->>Q: removeFirst() returns OnRefresh
+    P->>Q: removeFirst() returns OnLoginSubmitted(bob)
     P->>P: process next queued event
