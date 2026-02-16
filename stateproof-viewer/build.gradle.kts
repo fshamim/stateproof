@@ -3,8 +3,9 @@ plugins {
     `maven-publish`
 }
 
-group = "io.stateproof"
-version = "0.1.0-SNAPSHOT"
+val emptyJavadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
 
 kotlin {
     jvm {
@@ -28,4 +29,12 @@ kotlin {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEach {
     compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+}
+
+publishing {
+    publications.withType<MavenPublication>().configureEach {
+        if (name == "jvm") {
+            artifact(emptyJavadocJar)
+        }
+    }
 }

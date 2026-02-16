@@ -5,8 +5,9 @@ plugins {
     `maven-publish`
 }
 
-group = "io.stateproof"
-version = "0.1.0-SNAPSHOT"
+val emptyJavadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
 
 kotlin {
     // JVM target (Android, Desktop)
@@ -47,6 +48,9 @@ kotlin {
 // Publishing configuration
 publishing {
     publications.withType<MavenPublication> {
+        if (name == "jvm") {
+            artifact(emptyJavadocJar)
+        }
         pom {
             name.set("StateProof Compose")
             description.set("Compose Multiplatform integration for StateProof state machine library")

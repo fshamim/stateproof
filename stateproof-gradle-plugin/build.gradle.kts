@@ -4,8 +4,14 @@ plugins {
     `maven-publish`
 }
 
-group = "io.stateproof"
-version = "0.1.0-SNAPSHOT"
+val pluginSourcesJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("sources")
+    from(sourceSets.main.get().allSource)
+}
+
+val emptyJavadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
 
 dependencies {
     implementation(kotlin("stdlib"))
@@ -28,7 +34,7 @@ kotlin {
 gradlePlugin {
     plugins {
         create("stateproof") {
-            id = "io.stateproof"
+            id = "io.github.fshamim.stateproof"
             implementationClass = "io.stateproof.gradle.StateProofPlugin"
             displayName = "StateProof Plugin"
             description = "Gradle plugin for StateProof state machine test generation and sync"
@@ -37,13 +43,15 @@ gradlePlugin {
 }
 
 publishing {
-    publications {
-        create<MavenPublication>("pluginMaven") {
-            pom {
-                name.set("StateProof Gradle Plugin")
-                description.set("Gradle plugin for StateProof state machine test generation and synchronization")
-                url.set("https://github.com/stateproof/stateproof")
-            }
+    publications.withType<MavenPublication>().configureEach {
+        if (name == "pluginMaven") {
+            artifact(pluginSourcesJar)
+            artifact(emptyJavadocJar)
+        }
+        pom {
+            name.set("StateProof Gradle Plugin")
+            description.set("Gradle plugin for StateProof state machine test generation and synchronization")
+            url.set("https://github.com/stateproof/stateproof")
         }
     }
 }

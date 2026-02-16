@@ -3,8 +3,9 @@ plugins {
     `maven-publish`
 }
 
-group = "io.stateproof"
-version = "0.1.0-SNAPSHOT"
+val emptyJavadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
 
 repositories {
     mavenCentral()
@@ -21,11 +22,16 @@ kotlin {
 }
 
 publishing {
-    publications.withType<MavenPublication>().configureEach {
-        pom {
-            name.set("StateProof KSP")
-            description.set("KSP processor for StateProof auto-discovery")
-            url.set("https://github.com/stateproof/stateproof")
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+            artifact(tasks.named("kotlinSourcesJar"))
+            artifact(emptyJavadocJar)
+            pom {
+                name.set("StateProof KSP")
+                description.set("KSP processor for StateProof auto-discovery")
+                url.set("https://github.com/stateproof/stateproof")
+            }
         }
     }
 }

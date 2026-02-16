@@ -7,8 +7,12 @@ Adopt StateProof without rewriting app architecture in one step.
 ## Step-by-step
 
 1. Apply plugin and dependencies
-   - `io.stateproof` plugin
-   - `stateproof-core-jvm`, `stateproof-navigation`, `stateproof-annotations-jvm`, `stateproof-ksp`
+   - plugin: `io.github.fshamim.stateproof` (`0.8.0-alpha01`)
+   - `io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01`
+   - `io.github.fshamim:stateproof-navigation:0.8.0-alpha01`
+   - `io.github.fshamim:stateproof-annotations:0.8.0-alpha01`
+   - `io.github.fshamim:stateproof-ksp:0.8.0-alpha01`
+   - `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01` (test)
 2. Run scan
    - `./gradlew :app:stateproofScan`
    - confirm `integrationMode = SCREENS_AS_STATES`

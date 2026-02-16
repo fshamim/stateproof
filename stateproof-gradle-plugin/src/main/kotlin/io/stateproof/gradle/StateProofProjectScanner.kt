@@ -38,7 +38,7 @@ object StateProofProjectScanner {
             it.startsWith("androidx.compose:") || it.startsWith("org.jetbrains.compose:")
         } || hasComposeBuildFeature(project)
         val hasNavigationCompose = coordinates.contains("androidx.navigation:navigation-compose")
-        val hasStateProofDependencies = coordinates.any { it.startsWith("io.stateproof:") }
+        val hasStateProofDependencies = coordinates.any { it.startsWith("io.github.fshamim:") }
 
         val detectedStateMachineFiles = findFilesContaining(project, stateMachineMarkers)
         val detectedNavHostFiles = findFilesContaining(project, navMarkers)
@@ -190,13 +190,13 @@ object StateProofProjectScanner {
 
     private fun buildRecommendedDependencies(integrationMode: String): List<String> {
         val base = mutableListOf(
-            "io.stateproof:stateproof-core-jvm:0.1.0-SNAPSHOT",
-            "io.stateproof:stateproof-annotations-jvm:0.1.0-SNAPSHOT",
-            "io.stateproof:stateproof-ksp:0.1.0-SNAPSHOT",
-            "io.stateproof:stateproof-viewer-jvm:0.1.0-SNAPSHOT (test)",
+            "io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01",
+            "io.github.fshamim:stateproof-annotations:0.8.0-alpha01",
+            "io.github.fshamim:stateproof-ksp:0.8.0-alpha01",
+            "io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01 (test)",
         )
         if (integrationMode == "SCREENS_AS_STATES") {
-            base.add("io.stateproof:stateproof-navigation:0.1.0-SNAPSHOT")
+            base.add("io.github.fshamim:stateproof-navigation:0.8.0-alpha01")
         }
         return base.sorted()
     }

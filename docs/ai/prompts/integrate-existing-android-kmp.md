@@ -17,6 +17,8 @@ Follow this strict flow:
 6) Report file changes, generated output paths, and any assumptions.
 
 Constraints:
+- Use plugin `io.github.fshamim.stateproof` and dependencies from `io.github.fshamim` group only.
+- Keep version pinned to `0.8.0-alpha01` for all StateProof modules.
 - Prefer factory/KSP auto-discovery; avoid manual state transition maps.
 - Preserve existing test implementations.
 - Use guarded transitions for data-dependent branches.

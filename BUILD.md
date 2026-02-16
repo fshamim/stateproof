@@ -49,32 +49,34 @@ Add to your `build.gradle.kts`:
 
 ```kotlin
 repositories {
-    mavenLocal()
+    mavenCentral()
 }
 
 dependencies {
-    implementation("io.stateproof:stateproof-core-jvm:0.1.0-SNAPSHOT")
-    implementation("io.stateproof:stateproof-navigation:0.1.0-SNAPSHOT")
+    implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01")
+    implementation("io.github.fshamim:stateproof-navigation:0.8.0-alpha01")
 }
 ```
 
 ## Refresh in Consuming Project
 
-After publishing, clear the Gradle cache to force the consuming project to use the latest version:
+After publishing a new version, clear the Gradle cache to force the consuming project to use the latest version:
 ```bash
-rm -rf ~/.gradle/caches/modules-2/files-2.1/io.stateproof
+rm -rf ~/.gradle/caches/modules-2/files-2.1/io.github.fshamim
 ```
 
 Or combine publish + cache clear in one command:
 ```bash
-./gradlew publishToMavenLocal && rm -rf ~/.gradle/caches/modules-2/files-2.1/io.stateproof
+./gradlew publishToMavenLocal && rm -rf ~/.gradle/caches/modules-2/files-2.1/io.github.fshamim
 ```
 
 Then rebuild your consuming project (e.g., `./gradlew assembleDebug`).
 
 ## Verify Publication
 
-Check Maven Local (~/.m2/repository/io/stateproof/):
+Check Maven Local (~/.m2/repository/io/github/fshamim/):
 ```bash
-ls ~/.m2/repository/io/stateproof/
+ls ~/.m2/repository/io/github/fshamim/
 ```
+
+For Maven Central release flow, see: `docs/release/MAVEN_CENTRAL_RELEASE.md`.

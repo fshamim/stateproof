@@ -37,6 +37,12 @@ android {
     buildFeatures {
         compose = true
     }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
 }
 
 dependencies {
@@ -78,9 +84,7 @@ afterEvaluate {
         publications {
             create<MavenPublication>("release") {
                 from(components["release"])
-                groupId = "io.stateproof"
                 artifactId = "stateproof-navigation"
-                version = "0.1.0-SNAPSHOT"
             }
         }
     }

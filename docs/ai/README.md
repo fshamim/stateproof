@@ -15,6 +15,20 @@ This folder provides a practical skill pack and playbooks so an AI agent can int
   4. apply
   5. verify
 
+## Canonical coordinates (must use)
+
+Use these exact coordinates during AI setup/integration:
+
+- Plugin ID: `io.github.fshamim.stateproof`
+- Version: `0.8.0-alpha01`
+- Core: `io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01`
+- Annotations: `io.github.fshamim:stateproof-annotations:0.8.0-alpha01`
+- KSP processor: `io.github.fshamim:stateproof-ksp:0.8.0-alpha01`
+- Viewer (test): `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01`
+- Navigation (Android screens-as-states): `io.github.fshamim:stateproof-navigation:0.8.0-alpha01`
+
+Do not use `io.stateproof:*` Maven coordinates. Source package names remain `io.stateproof.*`.
+
 ## Skill files
 
 - Codex: `docs/ai/skills/codex/SKILL.md`
@@ -33,6 +47,12 @@ These are **workflow commands** for AI agents. They map to Gradle tasks and docu
   - detect module target (default `:app`, fallback to discovered module)
 - Action:
   - apply plugin + dependency + baseline `stateproof { ... }` config using DSL-correct syntax
+  - use canonical coordinates:
+    - plugin `io.github.fshamim.stateproof` (`0.8.0-alpha01`)
+    - `io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01`
+    - `io.github.fshamim:stateproof-annotations:0.8.0-alpha01`
+    - `io.github.fshamim:stateproof-ksp:0.8.0-alpha01`
+    - `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01` (test)
   - use local StateProof docs only (no internet search required)
 - Verify:
   - run `stateproofScan`, `stateproofSyncAll`, `stateproofDiagrams`, `stateproofViewer`
@@ -44,7 +64,7 @@ These are **workflow commands** for AI agents. They map to Gradle tasks and docu
 ### `/stateproof scan`
 
 - Pre-checks:
-  - plugin `io.stateproof` applied
+  - plugin `io.github.fshamim.stateproof` applied
 - Action:
   - run `./gradlew <module>:stateproofScan`
 - Verify:

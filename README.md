@@ -2,6 +2,8 @@
 
 A Kotlin Multiplatform state machine library with exhaustive test generation.
 
+> **Release channel:** `0.8.0-alpha01` (pre-1.0 alpha). APIs may evolve while release hardening is in progress.
+
 ## Core Value Proposition
 
 **The state graph drives your behavioral test suite.** StateProof's DFS traversal algorithm enumerates reachable paths in your modeled state machine, and each path becomes a generated test case.
@@ -464,15 +466,15 @@ Kotlin DSL (`build.gradle.kts`):
 
 ```kotlin
 plugins {
-    id("io.stateproof") version "0.1.0-SNAPSHOT"
+    id("io.github.fshamim.stateproof") version "0.8.0-alpha01"
     id("com.google.devtools.ksp") // for auto-discovery
 }
 
 dependencies {
-    implementation("io.stateproof:stateproof-core:0.1.0")
-    implementation("io.stateproof:stateproof-annotations-jvm:0.1.0-SNAPSHOT")
-    ksp("io.stateproof:stateproof-ksp:0.1.0-SNAPSHOT")
-    testImplementation("io.stateproof:stateproof-viewer-jvm:0.1.0-SNAPSHOT")
+    implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01")
+    implementation("io.github.fshamim:stateproof-annotations:0.8.0-alpha01")
+    ksp("io.github.fshamim:stateproof-ksp:0.8.0-alpha01")
+    testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01")
 }
 ```
 
@@ -480,15 +482,15 @@ Groovy DSL (`build.gradle`):
 
 ```groovy
 plugins {
-    id 'io.stateproof' version '0.1.0-SNAPSHOT'
+    id 'io.github.fshamim.stateproof' version '0.8.0-alpha01'
     id 'com.google.devtools.ksp' // for auto-discovery
 }
 
 dependencies {
-    implementation 'io.stateproof:stateproof-core:0.1.0'
-    implementation 'io.stateproof:stateproof-annotations-jvm:0.1.0-SNAPSHOT'
-    ksp 'io.stateproof:stateproof-ksp:0.1.0-SNAPSHOT'
-    testImplementation 'io.stateproof:stateproof-viewer-jvm:0.1.0-SNAPSHOT'
+    implementation 'io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01'
+    implementation 'io.github.fshamim:stateproof-annotations:0.8.0-alpha01'
+    ksp 'io.github.fshamim:stateproof-ksp:0.8.0-alpha01'
+    testImplementation 'io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01'
 }
 ```
 
@@ -743,14 +745,14 @@ Example: `_4_1698_from_Initial_to_Settings`
 // settings.gradle.kts
 pluginManagement {
     repositories {
-        mavenLocal()
+        mavenCentral()
         gradlePluginPortal()
     }
 }
 
 // build.gradle.kts
 plugins {
-    id("io.stateproof") version "0.1.0-SNAPSHOT"
+    id("io.github.fshamim.stateproof") version "0.8.0-alpha01"
 }
 
 stateproof {
@@ -767,7 +769,7 @@ If you use viewer tasks, add the viewer artifact to your test/runtime classpath:
 
 ```kotlin
 dependencies {
-    testImplementation("io.stateproof:stateproof-viewer-jvm:0.1.0-SNAPSHOT")
+    testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01")
 }
 ```
 
@@ -802,6 +804,13 @@ testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 androidTestImplementation("org.jetbrains.kotlin:kotlin-test:1.9.21")
 androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 ```
+
+## Release and Launch Docs
+
+- `docs/release/MAVEN_CENTRAL_RELEASE.md` - required secrets, one-command publish, and tag flow
+- `docs/release/ARTIFACT_MATRIX.md` - OSS module/artifact mapping for `0.8.0-alpha01`
+- `docs/launch/launch-day-checklist.md` - operational launch checklist
+- `docs/launch/announcement-draft.md` - announcement starter copy
 
 ## Roadmap (Planned)
 

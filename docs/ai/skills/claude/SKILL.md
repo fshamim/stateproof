@@ -15,6 +15,19 @@ Provide a predictable integration workflow for StateProof with minimal manual ed
 5. Apply changes in small slices
 6. Verify with sync/diagram/viewer tasks
 
+## Canonical setup coordinates
+
+Always apply these coordinates:
+
+- Plugin: `id("io.github.fshamim.stateproof") version "0.8.0-alpha01"`
+- Core: `implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01")`
+- Annotations: `implementation("io.github.fshamim:stateproof-annotations:0.8.0-alpha01")`
+- KSP: `ksp("io.github.fshamim:stateproof-ksp:0.8.0-alpha01")`
+- Viewer (test): `testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01")`
+- Android navigation integration: `implementation("io.github.fshamim:stateproof-navigation:0.8.0-alpha01")` when needed
+
+Do not use `io.stateproof:*` Maven coordinates.
+
 ## `/stateproof` workflow aliases
 
 - `/stateproof setup` -> setup StateProof in the current project/module (detect `build.gradle.kts` vs `build.gradle` first; use local docs, no web search)
