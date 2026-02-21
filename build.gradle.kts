@@ -11,7 +11,7 @@ plugins {
 }
 
 val stateproofGroup = providers.gradleProperty("stateproofGroup").orNull ?: "io.github.fshamim"
-val stateproofVersion = providers.gradleProperty("stateproofVersion").orNull ?: "0.8.0-alpha01"
+val stateproofVersion = providers.gradleProperty("stateproofVersion").orNull ?: "0.8.0-alpha02"
 
 allprojects {
     group = stateproofGroup

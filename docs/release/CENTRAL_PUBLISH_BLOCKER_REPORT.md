@@ -1,7 +1,7 @@
 # Central Publish Status
 
 Date: 2026-02-16  
-Target version: `0.8.0-alpha01`  
+Target version: `0.8.0-alpha02`  
 Namespace: `io.github.fshamim`
 
 ## Result

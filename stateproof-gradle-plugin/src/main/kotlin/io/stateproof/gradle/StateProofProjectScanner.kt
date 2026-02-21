@@ -190,13 +190,13 @@ object StateProofProjectScanner {
 
     private fun buildRecommendedDependencies(integrationMode: String): List<String> {
         val base = mutableListOf(
-            "io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01",
-            "io.github.fshamim:stateproof-annotations:0.8.0-alpha01",
-            "io.github.fshamim:stateproof-ksp:0.8.0-alpha01",
-            "io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01 (test)",
+            "io.github.fshamim:stateproof-core-jvm:0.8.0-alpha02",
+            "io.github.fshamim:stateproof-annotations:0.8.0-alpha02",
+            "io.github.fshamim:stateproof-ksp:0.8.0-alpha02",
+            "io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02 (test)",
         )
         if (integrationMode == "SCREENS_AS_STATES") {
-            base.add("io.github.fshamim:stateproof-navigation:0.8.0-alpha01")
+            base.add("io.github.fshamim:stateproof-navigation:0.8.0-alpha02")
         }
         return base.sorted()
     }

@@ -1,11 +1,11 @@
-# Launch Day Checklist (`0.8.0-alpha01`)
+# Launch Day Checklist (`0.8.0-alpha02`)
 
 ## Release Engineering
 
-- [ ] `stateproofVersion` is `0.8.0-alpha01` in `gradle.properties`
+- [ ] `stateproofVersion` is `0.8.0-alpha02` in `gradle.properties`
 - [ ] CI build green on default branch
 - [ ] `./gradlew clean build publishToMavenLocal` succeeds
-- [ ] Tag created: `v0.8.0-alpha01`
+- [ ] Tag created: `v0.8.0-alpha02`
 - [ ] Tag pushed to origin
 - [ ] Central publish workflow passed
 

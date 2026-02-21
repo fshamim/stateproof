@@ -59,6 +59,9 @@ object StateProofMarkers {
     /** User section header */
     const val USER_HEADER = "// User implementation below (preserved across regeneration)"
 
+    /** Marker indicating generated default body requires manual completion */
+    const val MANUAL_REQUIRED = "// STATEPROOF:MANUAL_REQUIRED - Auto body unavailable; review required"
+
     /** Regex to match BEGIN marker */
     val BEGIN_PATTERN = Regex("""//\s*▼+\s*STATEPROOF:EXPECTED.*▼+""")
 

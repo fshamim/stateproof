@@ -2,28 +2,38 @@
 
 ## Goal
 
-Extend an existing StateProof state machine with one new screen flow.
+Extend an existing StateProof state machine with a new screen flow using the KMP route-only architecture.
 
 ## Checklist
 
-1. Add state
-   - new screen state in sealed state hierarchy
-2. Add events
-   - user-intent events (enter, primary action, back, error)
+1. Add route state
+   - add route-only state object in `AppState` (no data payload)
+2. Add view events
+   - add `AppEvent` for machine-routed behavior
+   - add `LocalUiEvent` only for local/view-model behavior
 3. Add transitions
    - forward path(s)
    - back path(s)
    - guarded alternatives for data-dependent behavior
-4. Add side-effect metadata
-   - declare emitted events for side effects that branch behavior
-5. Navigation mapping
-   - map new state to composable destination
-6. Sync and validate
+4. Add/adjust reactive state-data container
+   - add `MutableStateFlow` field(s) for screen/business data
+   - expose read-only flow(s) through view-model state
+5. Side-effect boundaries
+   - use repositories for IO/business side effects
+   - avoid direct DB/service calls in UI
+6. In-place updates
+   - use `doNotTransition()` when route should remain unchanged
+7. Navigation mapping
+   - map new route state to screen/destination
+   - handle stale selection/invalid detail route fallback
+8. Sync and validate
    - run sync/diagram/viewer tasks
-   - verify expected test growth and transitions
+   - inspect generated tests for `STATEPROOF:MANUAL_REQUIRED`
+   - implement manual-required tests with shared helper strategy
 
 ## Quality gates
 
-- every new state has at least one inbound and outbound transition (except terminal states)
-- back behavior is explicit
-- no hidden transition logic in side effects
+1. Every non-terminal state has explicit inbound/outbound transitions.
+2. Back behavior is explicit and deterministic.
+3. Guarded logic is declarative in transition metadata.
+4. Generated expected transitions remain untouched by manual edits.

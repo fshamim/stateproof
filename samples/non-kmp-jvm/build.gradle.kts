@@ -1,10 +1,10 @@
 plugins {
     kotlin("jvm") version "1.9.21"
-    id("io.github.fshamim.stateproof") version "0.8.0-alpha01"
+    id("io.github.fshamim.stateproof") version "0.8.0-alpha02"
 }
 
 group = "io.stateproof.samples"
-version = "0.8.0-alpha01"
+version = "0.8.0-alpha02"
 
 kotlin {
     jvmToolchain(17)
@@ -16,12 +16,12 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01")
+    implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha02")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
-    testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01")
+    testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02")
 }
 
 tasks.test {

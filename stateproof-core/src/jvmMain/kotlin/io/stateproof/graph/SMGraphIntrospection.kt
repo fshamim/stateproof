@@ -58,8 +58,10 @@ private data class GroupBuildResult(
  * representation suitable for the test generator and PlantUML export.
  *
  * For each state, it attempts to invoke transition functions with placeholder
- * events to discover target states. This works for object events (data object).
- * For data class events, the target is marked as "?" since we can't instantiate them.
+ * state/event instances to discover target states.
+ *
+ * If a placeholder cannot be created, or transition evaluation throws for the
+ * placeholder values, the target is marked as "?".
  */
 fun <STATE : Any, EVENT : Any> SMGraph<STATE, EVENT>.toStateInfoMap(): Map<String, StateInfo> {
     val result = mutableMapOf<String, StateInfo>()
@@ -69,11 +71,12 @@ fun <STATE : Any, EVENT : Any> SMGraph<STATE, EVENT>.toStateInfoMap(): Map<Strin
         val stateName = stateClass.simpleName ?: UNKNOWN_NAME
         val stateInfo = StateInfo(stateName)
 
-        // Get the state instance for invoking transitions.
-        // For object declarations, use objectInstance.
-        // Otherwise, fall back to initialState.
         @Suppress("UNCHECKED_CAST")
-        val stateInstance = (stateClass.objectInstance as? STATE) ?: initialState
+        val stateInstance = (
+            (stateClass.objectInstance as? STATE)
+                ?: createPlaceholderState(stateClass)
+                ?: initialState
+            )
 
         for ((eventMatcher, eventTransition) in stateDefinition.transitions) {
             val eventClass = eventMatcher.matchedClass
@@ -215,7 +218,11 @@ private fun <STATE : Any, EVENT : Any> SMGraph<STATE, EVENT>.introspectForStateG
         stateClasses += stateClass
 
         @Suppress("UNCHECKED_CAST")
-        val stateInstance = (stateClass.objectInstance as? STATE) ?: initialState
+        val stateInstance = (
+            (stateClass.objectInstance as? STATE)
+                ?: createPlaceholderState(stateClass)
+                ?: initialState
+            )
 
         for ((eventMatcher, eventTransition) in stateDefinition.transitions) {
             val eventClass = eventMatcher.matchedClass
@@ -429,6 +436,15 @@ private fun emittedEventsSortKey(events: List<EmittedEventInfo>): String =
 private fun createPlaceholderEvent(eventClass: KClass<*>): Any? {
     return try {
         StateProofAutoMocks.provide(eventClass)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun <STATE : Any> createPlaceholderState(stateClass: KClass<*>): STATE? {
+    return try {
+        @Suppress("UNCHECKED_CAST")
+        StateProofAutoMocks.provide(stateClass) as? STATE
     } catch (_: Exception) {
         null
     }

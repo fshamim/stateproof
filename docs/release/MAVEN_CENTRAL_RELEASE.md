@@ -2,7 +2,7 @@
 
 This runbook documents the release process for StateProof prereleases.
 
-Current release target: `0.8.0-alpha01`
+Current release target: `0.8.0-alpha02`
 
 ## Required Secrets / Properties
 
@@ -57,12 +57,12 @@ ls ~/.m2/repository/io/github/fshamim
 
 ## Tag and Release Sequence
 
-1. Ensure `stateproofVersion=0.8.0-alpha01`.
+1. Ensure `stateproofVersion=0.8.0-alpha02`.
 2. Commit and tag:
 
 ```bash
-git tag v0.8.0-alpha01
-git push origin v0.8.0-alpha01
+git tag v0.8.0-alpha02
+git push origin v0.8.0-alpha02
 ```
 
 3. Tag push triggers release workflow: `.github/workflows/release.yml`.

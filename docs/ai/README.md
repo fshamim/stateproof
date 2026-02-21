@@ -1,31 +1,52 @@
 # StateProof AI Agent Kit (Codex + Claude)
 
-This folder provides a practical skill pack and playbooks so an AI agent can integrate StateProof with minimal manual work.
+This folder is the AI integration contract for StateProof.
 
-## What this kit solves
+## Primary architecture contract (KMP Screens-as-States)
 
-- Detects project shape first (`/stateproof scan`)
-- Chooses integration path automatically:
-  - `SCREENS_AS_STATES` for Android + Compose + navigation
-  - `STATE_MACHINE_ONLY` for JVM/non-KMP or non-navigation flows
-- Applies changes with checkpoints:
-  1. scan
-  2. classify
-  3. plan
-  4. apply
-  5. verify
+For Android/KMP projects using screen navigation, AI must implement the pattern from `docs/SCREENS_AS_STATES.md`:
+
+1. Route-only state classes.
+2. Reactive UI state data in `MutableStateFlow` container.
+3. Shared KMP ViewModel-style facade exposing:
+   - `state: StateFlow<RouteState>`
+   - `stateData: ...`
+   - `onEvents(...)`
+4. Repository-only side effects in state machine.
+5. `doNotTransition()` for in-place data updates.
+
+Do not embed mutable business payload directly in route-state subclasses.
+
+## Generated test contract for AI
+
+When StateProof sync generates tests:
+
+1. Treat `expectedTransitions` as source-of-truth.
+2. If test has executable body, AI should only add helper reuse when needed.
+3. If test contains `STATEPROOF:MANUAL_REQUIRED`, AI must implement the user section using a shared helper/harness strategy.
+4. Preserve generated marker blocks and annotation metadata.
+5. Avoid ad-hoc per-test bespoke setup when a shared helper can solve the same class of cases.
+
+## Test target policy for KMP
+
+Use this default policy unless project constraints override it:
+
+1. Generated path tests: `desktopTest` (or JVM test source set configured via `testDir`).
+2. Pure logic unit tests: `commonTest`.
+3. Screenshot baseline: `desktopTest`.
+4. Optional Android visual parity/screenshot layer: `androidTest`.
+
+Reason: current StateProof generation/runtime tooling is JVM-oriented.
 
 ## Canonical coordinates (must use)
 
-Use these exact coordinates during AI setup/integration:
-
 - Plugin ID: `io.github.fshamim.stateproof`
-- Version: `0.8.0-alpha01`
-- Core: `io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01`
-- Annotations: `io.github.fshamim:stateproof-annotations:0.8.0-alpha01`
-- KSP processor: `io.github.fshamim:stateproof-ksp:0.8.0-alpha01`
-- Viewer (test): `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01`
-- Navigation (Android screens-as-states): `io.github.fshamim:stateproof-navigation:0.8.0-alpha01`
+- Version: `0.8.0-alpha02`
+- Core: `io.github.fshamim:stateproof-core-jvm:0.8.0-alpha02`
+- Annotations: `io.github.fshamim:stateproof-annotations:0.8.0-alpha02`
+- KSP processor: `io.github.fshamim:stateproof-ksp:0.8.0-alpha02`
+- Viewer (test): `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02`
+- Navigation (Android screens-as-states): `io.github.fshamim:stateproof-navigation:0.8.0-alpha02`
 
 Do not use `io.stateproof:*` Maven coordinates. Source package names remain `io.stateproof.*`.
 
@@ -34,90 +55,51 @@ Do not use `io.stateproof:*` Maven coordinates. Source package names remain `io.
 - Codex: `docs/ai/skills/codex/SKILL.md`
 - Claude: `docs/ai/skills/claude/SKILL.md`
 
-Copy the skill file into your agent skill location, then invoke it in your prompt.
-
 ## `/stateproof` command contract (agent workflow)
-
-These are **workflow commands** for AI agents. They map to Gradle tasks and documented steps.
 
 ### `/stateproof setup`
 
-- Pre-checks:
-  - detect Gradle DSL first (`build.gradle.kts` vs `build.gradle`)
-  - detect module target (default `:app`, fallback to discovered module)
-- Action:
-  - apply plugin + dependency + baseline `stateproof { ... }` config using DSL-correct syntax
-  - use canonical coordinates:
-    - plugin `io.github.fshamim.stateproof` (`0.8.0-alpha01`)
-    - `io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01`
-    - `io.github.fshamim:stateproof-annotations:0.8.0-alpha01`
-    - `io.github.fshamim:stateproof-ksp:0.8.0-alpha01`
-    - `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01` (test)
-  - use local StateProof docs only (no internet search required)
-- Verify:
-  - run `stateproofScan`, `stateproofSyncAll`, `stateproofDiagrams`, `stateproofViewer`
-- Failure handling:
-  - if scan task is missing, fix plugin/config wiring and rerun setup
-- Rollback:
-  - revert only setup-related Gradle/doc edits
+- Detect Gradle DSL (`build.gradle.kts` vs `build.gradle`)
+- Detect target module (`:app` default or discovered module)
+- Apply plugin/dependencies/config with canonical coordinates
+- Use local StateProof docs as primary source
+- Verify with:
+  - `stateproofScan`
+  - `stateproofSyncAll`
+  - `stateproofDiagrams`
+  - `stateproofViewer`
 
 ### `/stateproof scan`
 
-- Pre-checks:
-  - plugin `io.github.fshamim.stateproof` applied
-- Action:
-  - run `./gradlew <module>:stateproofScan`
-- Verify:
-  - report exists at `build/stateproof/agent/project-scan.json`
-- Failure handling:
-  - if task missing, add plugin and retry
-- Rollback:
-  - none (read-only)
+- Run `./gradlew <module>:stateproofScan`
+- Read `build/stateproof/agent/project-scan.json`
 
 ### `/stateproof tests`
 
-- Pre-checks:
-  - provider/factory config or KSP auto-discovery in place
-- Action:
-  - run `./gradlew <module>:stateproofSyncAll`
-- Verify:
-  - generated/updated tests in configured test directories
-- Failure handling:
-  - run compile/KSP tasks once, then retry
-- Rollback:
-  - revert generated files if integration path was wrong
+- Run `./gradlew <module>:stateproofSyncAll`
+- Ensure generated tests are in configured target test directory
+- Report `STATEPROOF:MANUAL_REQUIRED` findings explicitly
 
 ### `/stateproof diagram`
 
-- Action: `./gradlew <module>:stateproofDiagrams`
-- Verify: files under `build/stateproof/diagrams`
+- Run `./gradlew <module>:stateproofDiagrams`
 
 ### `/stateproof viewer`
 
-- Action: `./gradlew <module>:stateproofViewer`
-- Verify: files under `build/stateproof/viewer`
+- Run `./gradlew <module>:stateproofViewer`
 
 ### `/stateproof watch`
 
-- Action: `./gradlew <module>:stateproofWatch`
-- Modes via extension `watchMode`: `tests|diagram|viewer|all`
-- Verify: one change in watch paths triggers expected action set
+- Run `./gradlew <module>:stateproofWatch`
+- Watch modes: `tests|diagram|viewer|all`
 
 ### `/stateproof migrate-screens`
 
-- Use playbook: `docs/playbooks/migration-existing-android-kmp.md`
-- Expected result:
-  - screens mapped to states
-  - events mapped to user actions + side effects
-  - back handling modeled as explicit event transitions
+- Follow `docs/playbooks/migration-existing-android-kmp.md`
 
 ### `/stateproof add-screen`
 
-- Use playbook: `docs/playbooks/add-screen-event-back.md`
-- Expected result:
-  - new state + event classes
-  - transitions + guarded side effects
-  - navigation/back mapping updates
+- Follow `docs/playbooks/add-screen-event-back.md`
 
 ## Prompt templates
 
@@ -129,4 +111,4 @@ These are **workflow commands** for AI agents. They map to Gradle tasks and docu
 ## Replay references
 
 - Non-KMP fallback replay: `docs/ai/replays/non-kmp-sample-replay.md`
-- Consumer-specific integration replays should stay in the consumer repository.
+- Consumer-specific replays should remain in consumer repository.

@@ -24,7 +24,18 @@ data class TestCodeGenConfig(
     val indent: String = "    ",
     /** Class-level annotations (e.g., "@RunWith(AndroidJUnit4::class)") */
     val classAnnotations: List<String> = emptyList(),
+    /** Generation policy for default test body */
+    val generatedBodyPolicy: GeneratedBodyPolicy = GeneratedBodyPolicy.SAFE_AUTOGEN,
+    /** Compile-safe event invocation expressions keyed by event name */
+    val eventInvocationByName: Map<String, String> = emptyMap(),
+    /** Manual review reasons keyed by event name */
+    val manualReviewReasonsByEvent: Map<String, List<String>> = emptyMap(),
 )
+
+enum class GeneratedBodyPolicy {
+    COMMENT_ONLY,
+    SAFE_AUTOGEN,
+}
 
 /**
  * Generates Kotlin test code for StateProof tests.
@@ -138,18 +149,87 @@ object TestCodeGenerator {
         appendLine("${indent}${indent}${StateProofMarkers.USER_SECTION}")
         appendLine()
 
-        // Default implementation (commented out - user must implement)
-        appendLine("${indent}${indent}// TODO: Implement test - create state machine and fire events")
-        appendLine("${indent}${indent}// val sm = ${config.stateMachineFactory}")
-        for (event in testCase.eventSequence) {
-            appendLine("${indent}${indent}// sm.onEvent(${config.eventClassPrefix}.$event)")
+        val invocationPlan = buildInvocationPlan(config, testCase)
+        if (invocationPlan.manualReasons.isNotEmpty()) {
+            appendLine("${indent}${indent}${StateProofMarkers.MANUAL_REQUIRED}")
+            for (reason in invocationPlan.manualReasons) {
+                appendLine("${indent}${indent}// - $reason")
+            }
+            appendLine()
         }
-        appendLine("${indent}${indent}// sm.awaitIdle()")
-        appendLine()
-        appendLine("${indent}${indent}// assertEquals(expectedTransitions, sm.getTransitionLog())")
+
+        if (!invocationPlan.isManual) {
+            appendLine("${indent}${indent}val sm = ${config.stateMachineFactory}")
+            for (invocation in invocationPlan.runtimeInvocations) {
+                appendLine("${indent}${indent}sm.onEvent($invocation)")
+            }
+            appendLine("${indent}${indent}sm.awaitIdle()")
+            appendLine()
+            appendLine("${indent}${indent}assertEquals(expectedTransitions, sm.getTransitionLog())")
+        } else {
+            appendLine("${indent}${indent}// TODO: Implement test - create state machine and fire events")
+            appendLine("${indent}${indent}// val sm = ${config.stateMachineFactory}")
+            for (invocation in invocationPlan.commentInvocations) {
+                appendLine("${indent}${indent}// sm.onEvent($invocation)")
+            }
+            appendLine("${indent}${indent}// sm.awaitIdle()")
+            appendLine()
+            appendLine("${indent}${indent}// assertEquals(expectedTransitions, sm.getTransitionLog())")
+        }
 
         // Close function
         appendLine("${indent}}")
+    }
+
+    private data class InvocationPlan(
+        val isManual: Boolean,
+        val runtimeInvocations: List<String>,
+        val commentInvocations: List<String>,
+        val manualReasons: List<String>,
+    )
+
+    private fun buildInvocationPlan(
+        config: TestCodeGenConfig,
+        testCase: SimpleTestCase,
+    ): InvocationPlan {
+        if (config.generatedBodyPolicy == GeneratedBodyPolicy.COMMENT_ONLY) {
+            return InvocationPlan(
+                isManual = true,
+                runtimeInvocations = emptyList(),
+                commentInvocations = testCase.eventSequence.map { event ->
+                    config.eventInvocationByName[event] ?: "${config.eventClassPrefix}.$event"
+                },
+                manualReasons = emptyList(),
+            )
+        }
+
+        val runtimeInvocations = mutableListOf<String>()
+        val manualReasons = linkedSetOf<String>()
+
+        for (event in testCase.eventSequence) {
+            val invocation = config.eventInvocationByName[event]
+            if (invocation == null) {
+                manualReasons += "$event: unresolved invocation expression"
+            } else {
+                runtimeInvocations += invocation
+            }
+
+            val explicitReasons = config.manualReviewReasonsByEvent[event].orEmpty()
+            for (reason in explicitReasons) {
+                manualReasons += "$event: $reason"
+            }
+        }
+
+        val commentInvocations = testCase.eventSequence.map { event ->
+            config.eventInvocationByName[event] ?: "${config.eventClassPrefix}.$event"
+        }
+
+        return InvocationPlan(
+            isManual = manualReasons.isNotEmpty(),
+            runtimeInvocations = runtimeInvocations,
+            commentInvocations = commentInvocations,
+            manualReasons = manualReasons.toList(),
+        )
     }
 
     /**

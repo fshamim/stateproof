@@ -1,23 +1,30 @@
 # Prompt Template: Add Screen + Events + Back Handling
 
 ```text
-Add a new screen flow using StateProof screens-as-states pattern.
+Add a new screen flow using the StateProof KMP screens-as-states architecture.
 
-Steps:
-1) Identify target state machine and current adjacent states.
-2) Add the new screen state and related events.
-3) Add transitions with explicit guard conditions for data-dependent branches.
-4) Model back handling as an explicit event transition.
-5) If side effects can emit events, declare emitted event metadata in the DSL branch.
-6) Update navigation mapping for the new state.
-7) Run:
+Follow this sequence:
+1) Identify target state machine and neighboring route states.
+2) Add route-only state object(s) (no payload fields in route state).
+3) Add/extend view events:
+   - AppEvent (machine-routed)
+   - LocalUiEvent (view-model local behavior when needed)
+4) Add transitions with explicit guard conditions for data-dependent branches.
+5) If side effects emit events, declare emitted-event metadata in transition branch.
+6) Keep business/UI data in reactive state-data container (MutableStateFlow), not in AppState.
+7) Use repository-only side effects; avoid direct DB/framework calls in machine.
+8) For in-place updates (list/detail toggles etc), use doNotTransition().
+9) Update UI mapping and route fallback behavior (e.g., stale selected item handling).
+10) Run:
    - ./gradlew :app:stateproofSyncAll
    - ./gradlew :app:stateproofDiagrams
    - ./gradlew :app:stateproofViewer
-8) Confirm generated tests include the new paths.
+11) Confirm generated tests include new paths.
+12) If generated tests contain STATEPROOF:MANUAL_REQUIRED, implement shared harness helpers instead of per-test ad-hoc edits.
 
 Output:
 - changed files
 - generated tests/diagrams/viewer paths
-- any ambiguous transitions that need product decisions
+- manual-required test markers and chosen helper strategy
+- any ambiguous transitions requiring product decisions
 ```

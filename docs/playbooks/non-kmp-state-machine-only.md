@@ -9,11 +9,11 @@
 ## Steps
 
 1. Add plugin + core dependencies
-   - plugin: `io.github.fshamim.stateproof` (`0.8.0-alpha01`)
-   - `io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01`
-   - `io.github.fshamim:stateproof-annotations:0.8.0-alpha01`
-   - `io.github.fshamim:stateproof-ksp:0.8.0-alpha01`
-   - `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01` (test)
+   - plugin: `io.github.fshamim.stateproof` (`0.8.0-alpha02`)
+   - `io.github.fshamim:stateproof-core-jvm:0.8.0-alpha02`
+   - `io.github.fshamim:stateproof-annotations:0.8.0-alpha02`
+   - `io.github.fshamim:stateproof-ksp:0.8.0-alpha02`
+   - `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02` (test)
 2. Configure one provider/factory (or multiple)
 3. Set initial state and test output settings
 4. Run `stateproofSyncAll`

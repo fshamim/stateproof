@@ -2,7 +2,7 @@
 
 A Kotlin Multiplatform state machine library with exhaustive test generation.
 
-> **Release channel:** `0.8.0-alpha01` (pre-1.0 alpha). APIs may evolve while release hardening is in progress.
+> **Release channel:** `0.8.0-alpha02` (pre-1.0 alpha). APIs may evolve while release hardening is in progress.
 
 ## Core Value Proposition
 
@@ -371,7 +371,12 @@ fun `_3_7A1C_from_CheckoutStart_to_Completed`() = runBlocking {
     // User implementation below (preserved across regeneration)
     // ══════════════════════════════════════════════════════════
 
-    // TODO: Implement test
+    val sm = createCheckoutStateMachine()
+    sm.onEvent(CheckoutEvent.OnCheckoutStarted)
+    sm.onEvent(CheckoutEvent.OnPayByCard)
+    sm.onEvent(CheckoutEvent.OnCardApproved)
+    sm.awaitIdle()
+    assertEquals(expectedTransitions, sm.getTransitionLog())
 }
 ```
 
@@ -381,6 +386,21 @@ fun `_3_7A1C_from_CheckoutStart_to_Completed`() = runBlocking {
 - Sync preserves your implementation section below the markers.
 - Removed traversal paths are marked obsolete, not deleted.
 - User-written test code is never auto-deleted.
+
+### Generated Body Policy + Manual Marker
+
+- If path events are compile-safe (`object`/no-arg), StateProof emits executable default bodies.
+- If safe generation is not possible (guarded/data-dependent/constructor-required), StateProof emits a scaffold with:
+  - `STATEPROOF:MANUAL_REQUIRED`
+  - one-line reasons per event
+
+```kotlin
+// STATEPROOF:MANUAL_REQUIRED - Auto body unavailable; review required
+// - OnSubmit: constructor requires arguments
+// - OnRetry: guarded transition 'token.exists' needs explicit test setup
+```
+
+Treat this marker as an explicit implementation task. Keep helper logic shared instead of per-test ad-hoc edits.
 
 ```kotlin
 @StateProofObsolete(
@@ -466,15 +486,15 @@ Kotlin DSL (`build.gradle.kts`):
 
 ```kotlin
 plugins {
-    id("io.github.fshamim.stateproof") version "0.8.0-alpha01"
+    id("io.github.fshamim.stateproof") version "0.8.0-alpha02"
     id("com.google.devtools.ksp") // for auto-discovery
 }
 
 dependencies {
-    implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01")
-    implementation("io.github.fshamim:stateproof-annotations:0.8.0-alpha01")
-    ksp("io.github.fshamim:stateproof-ksp:0.8.0-alpha01")
-    testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01")
+    implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha02")
+    implementation("io.github.fshamim:stateproof-annotations:0.8.0-alpha02")
+    ksp("io.github.fshamim:stateproof-ksp:0.8.0-alpha02")
+    testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02")
 }
 ```
 
@@ -482,15 +502,15 @@ Groovy DSL (`build.gradle`):
 
 ```groovy
 plugins {
-    id 'io.github.fshamim.stateproof' version '0.8.0-alpha01'
+    id 'io.github.fshamim.stateproof' version '0.8.0-alpha02'
     id 'com.google.devtools.ksp' // for auto-discovery
 }
 
 dependencies {
-    implementation 'io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01'
-    implementation 'io.github.fshamim:stateproof-annotations:0.8.0-alpha01'
-    ksp 'io.github.fshamim:stateproof-ksp:0.8.0-alpha01'
-    testImplementation 'io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01'
+    implementation 'io.github.fshamim:stateproof-core-jvm:0.8.0-alpha02'
+    implementation 'io.github.fshamim:stateproof-annotations:0.8.0-alpha02'
+    ksp 'io.github.fshamim:stateproof-ksp:0.8.0-alpha02'
+    testImplementation 'io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02'
 }
 ```
 
@@ -677,6 +697,7 @@ Copy the skill file into your agent skill directory and invoke it in your prompt
 ### Existing Android/KMP migration (screens-as-states)
 
 - Use playbook: `docs/playbooks/migration-existing-android-kmp.md`
+- Sample: `samples/TaskAppKMP/`
 - Run scan first:
 
 ```bash
@@ -752,7 +773,7 @@ pluginManagement {
 
 // build.gradle.kts
 plugins {
-    id("io.github.fshamim.stateproof") version "0.8.0-alpha01"
+    id("io.github.fshamim.stateproof") version "0.8.0-alpha02"
 }
 
 stateproof {
@@ -765,11 +786,21 @@ stateproof {
 }
 ```
 
+For Kotlin Multiplatform screen-flow projects, prefer a JVM/desktop generated-test target:
+
+```kotlin
+stateproof {
+    testDir.set(layout.projectDirectory.dir("src/desktopTest/kotlin/generated/stateproof"))
+}
+```
+
+Keep `commonTest` for platform-agnostic logic tests; use `desktopTest` as default generated path/screenshot baseline target.
+
 If you use viewer tasks, add the viewer artifact to your test/runtime classpath:
 
 ```kotlin
 dependencies {
-    testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01")
+    testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02")
 }
 ```
 
@@ -808,7 +839,7 @@ androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 ## Release and Launch Docs
 
 - `docs/release/MAVEN_CENTRAL_RELEASE.md` - required secrets, one-command publish, and tag flow
-- `docs/release/ARTIFACT_MATRIX.md` - OSS module/artifact mapping for `0.8.0-alpha01`
+- `docs/release/ARTIFACT_MATRIX.md` - OSS module/artifact mapping for `0.8.0-alpha02`
 - `docs/launch/launch-day-checklist.md` - operational launch checklist
 - `docs/launch/announcement-draft.md` - announcement starter copy
 

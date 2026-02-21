@@ -7,6 +7,7 @@ import io.stateproof.diagram.toFlatStateGraph
 import io.stateproof.diagram.writeTo
 import io.stateproof.graph.StateInfo
 import io.stateproof.registry.StateMachineRegistryLoader
+import io.stateproof.sync.GeneratedBodyPolicy
 import io.stateproof.sync.TestCodeGenConfig
 import io.stateproof.sync.TestCodeGenerator
 import io.stateproof.sync.TestFileParser
@@ -229,6 +230,13 @@ object StateProofCli {
             maxPathDepth = if (maxDepth == -1) null else maxDepth,
         )
 
+        val invocationResolution = EventInvocationResolver.resolve(
+            providerFqn = provider,
+            eventClassPrefix = eventPrefix,
+            additionalImports = additionalImports,
+            stateInfoMap = stateInfoMap,
+        )
+
         val codeGenConfig = TestCodeGenConfig(
             packageName = packageName,
             testClassName = className,
@@ -238,6 +246,9 @@ object StateProofCli {
             classAnnotations = classAnnotations,
             useRunTest = useRunTest,
             useRunBlocking = !useRunTest,
+            generatedBodyPolicy = GeneratedBodyPolicy.SAFE_AUTOGEN,
+            eventInvocationByName = invocationResolution.eventInvocationByName,
+            manualReviewReasonsByEvent = invocationResolution.manualReviewReasonsByEvent,
         )
 
         val result = StateProofSync.generate(
@@ -334,19 +345,27 @@ object StateProofCli {
             maxPathDepth = if (maxDepth == -1) null else maxDepth,
         )
 
-        // Build code gen config for creating new test files during sync
-        val codeGenConfig = if (packageName != null || classAnnotations.isNotEmpty() || useRunTest) {
-            TestCodeGenConfig(
-                packageName = packageName ?: "",
-                testClassName = className ?: "",
-                stateMachineFactory = factory,
-                eventClassPrefix = eventPrefix,
-                additionalImports = additionalImports,
-                classAnnotations = classAnnotations,
-                useRunTest = useRunTest,
-                useRunBlocking = !useRunTest,
-            )
-        } else null
+        val invocationResolution = EventInvocationResolver.resolve(
+            providerFqn = provider,
+            eventClassPrefix = eventPrefix,
+            additionalImports = additionalImports,
+            stateInfoMap = stateInfoMap,
+        )
+
+        // Build code gen config for creating/appending test files during sync.
+        val codeGenConfig = TestCodeGenConfig(
+            packageName = packageName ?: "",
+            testClassName = className ?: "",
+            stateMachineFactory = factory,
+            eventClassPrefix = eventPrefix,
+            additionalImports = additionalImports,
+            classAnnotations = classAnnotations,
+            useRunTest = useRunTest,
+            useRunBlocking = !useRunTest,
+            generatedBodyPolicy = GeneratedBodyPolicy.SAFE_AUTOGEN,
+            eventInvocationByName = invocationResolution.eventInvocationByName,
+            manualReviewReasonsByEvent = invocationResolution.manualReviewReasonsByEvent,
+        )
 
         val result = StateProofSync.sync(
             stateInfoMap = stateInfoMap,
@@ -452,6 +471,13 @@ object StateProofCli {
                 }
 
                 val useRunTest = target == "android"
+                val loaded = StateInfoLoader.loadFromFactoryWithState(descriptor.factoryFqn)
+                val invocationResolution = EventInvocationResolver.resolve(
+                    providerFqn = descriptor.factoryFqn,
+                    eventClassPrefix = eventPrefix,
+                    additionalImports = targetImports.toList(),
+                    stateInfoMap = loaded.stateInfoMap,
+                )
 
                 val codeGenConfig = TestCodeGenConfig(
                     packageName = testPackage,
@@ -462,9 +488,10 @@ object StateProofCli {
                     classAnnotations = classAnnotations,
                     useRunTest = useRunTest,
                     useRunBlocking = !useRunTest,
+                    generatedBodyPolicy = GeneratedBodyPolicy.SAFE_AUTOGEN,
+                    eventInvocationByName = invocationResolution.eventInvocationByName,
+                    manualReviewReasonsByEvent = invocationResolution.manualReviewReasonsByEvent,
                 )
-
-                val loaded = StateInfoLoader.loadFromFactoryWithState(descriptor.factoryFqn)
 
                 println("Syncing ${descriptor.name.ifBlank { baseName }} ($target)...")
                 val result = StateProofSync.sync(
@@ -1042,8 +1069,12 @@ object StateProofSync {
                 } else {
                     // Create a new file - use provided config or infer
                     val newFileConfig = codeGenConfig?.let {
+                        val resolvedPackage = resolvePackageNameForTargetFile(
+                            requestedPackage = it.packageName,
+                            targetFile = targetFile,
+                        )
                         it.copy(
-                            packageName = it.packageName.ifBlank { inferPackageName(targetFile) },
+                            packageName = resolvedPackage,
                             testClassName = it.testClassName.ifBlank { targetFile.nameWithoutExtension },
                         )
                     } ?: TestCodeGenConfig(
@@ -1111,26 +1142,35 @@ object StateProofSync {
     /**
      * Infers package name from a file's path based on common source set conventions.
      */
-    private fun inferPackageName(file: File): String {
-        val path = file.absolutePath
-        val sourceRoots = listOf(
-            "src/test/kotlin/",
-            "src/test/java/",
-            "src/androidTest/kotlin/",
-            "src/androidTest/java/",
-            "src/main/kotlin/",
-            "src/main/java/",
-        )
+    internal fun resolvePackageNameForTargetFile(requestedPackage: String, targetFile: File): String {
+        val explicit = requestedPackage.trim()
+        val inferred = inferPackageName(targetFile)
+        if (explicit.isBlank()) {
+            return inferred
+        }
+        if (inferred != UNKNOWN_PACKAGE_FALLBACK && explicit != inferred) {
+            throw IllegalArgumentException(
+                "Configured package '$explicit' does not match inferred package '$inferred' " +
+                    "for test file '${targetFile.absolutePath}'. " +
+                    "Align --package (or stateproof.testPackage) with --test-dir.",
+            )
+        }
+        return explicit
+    }
 
-        for (root in sourceRoots) {
-            val index = path.indexOf(root)
-            if (index >= 0) {
-                val relative = path.substring(index + root.length)
-                val dir = relative.substringBeforeLast('/')
-                return dir.replace('/', '.')
+    internal fun inferPackageName(file: File): String {
+        val normalizedPath = file.absolutePath.replace('\\', '/')
+        val sourceSetMatch = SOURCE_SET_PATH_REGEX.matchEntire(normalizedPath)
+        if (sourceSetMatch != null) {
+            val relative = sourceSetMatch.groupValues[2]
+            val packageDir = relative.substringBeforeLast('/', missingDelimiterValue = "")
+            if (packageDir.isNotBlank()) {
+                return packageDir.replace('/', '.')
             }
         }
-
-        return "generated"
+        return UNKNOWN_PACKAGE_FALLBACK
     }
+
+    private const val UNKNOWN_PACKAGE_FALLBACK = "generated"
+    private val SOURCE_SET_PATH_REGEX = Regex(""".*/src/[^/]+/(kotlin|java)/(.+)""")
 }

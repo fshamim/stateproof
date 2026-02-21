@@ -1,4 +1,4 @@
-# Artifact Matrix (`0.8.0-alpha01`)
+# Artifact Matrix (`0.8.0-alpha02`)
 
 This matrix defines the OSS artifact set targeted in Sprint 14.
 
@@ -22,6 +22,6 @@ This matrix defines the OSS artifact set targeted in Sprint 14.
 
 ```kotlin
 plugins {
-    id("io.github.fshamim.stateproof") version "0.8.0-alpha01"
+    id("io.github.fshamim.stateproof") version "0.8.0-alpha02"
 }
 ```

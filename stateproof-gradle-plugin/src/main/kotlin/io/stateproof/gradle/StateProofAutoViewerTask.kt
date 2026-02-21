@@ -65,7 +65,7 @@ abstract class StateProofAutoViewerTask : DefaultTask() {
         } catch (_: ClassNotFoundException) {
             throw GradleException(
                 "StateProof viewer classes were not found on the task classpath. " +
-                    "Add testImplementation(\"io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01\") " +
+                    "Add testImplementation(\"io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02\") " +
                     "to your module dependencies and rerun."
             )
         } finally {

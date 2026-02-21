@@ -2,60 +2,69 @@
 
 ## Goal
 
-Provide a predictable integration workflow for StateProof with minimal manual edits.
+Provide a predictable StateProof integration flow with compile-safe checkpoints.
+
+## Required architecture for Android/KMP screen flows
+
+Use `docs/SCREENS_AS_STATES.md` as mandatory design contract:
+
+1. route-only states
+2. reactive UI/business state in `MutableStateFlow` container
+3. shared KMP ViewModel-like facade (`state`, `stateData`, `onEvents`)
+4. repository-driven side effects
+5. `doNotTransition()` for in-place updates
 
 ## Required sequence
 
-1. Run project scan (`stateproofScan`)
-2. Read project profile JSON
-3. Choose one integration mode:
-   - `SCREENS_AS_STATES` (Android/Compose/navigation)
-   - `STATE_MACHINE_ONLY` (JVM/non-KMP fallback)
-4. Propose a short implementation plan
-5. Apply changes in small slices
-6. Verify with sync/diagram/viewer tasks
+1. run scan (`stateproofScan`)
+2. read project profile JSON
+3. choose mode (`SCREENS_AS_STATES` or `STATE_MACHINE_ONLY`)
+4. propose short implementation plan
+5. apply changes in small slices
+6. verify sync/diagram/viewer tasks
+
+## Generated test guidance
+
+1. Keep `expectedTransitions` unchanged except via sync.
+2. Executable generated bodies should remain executable.
+3. For tests marked `STATEPROOF:MANUAL_REQUIRED`, implement through shared helper/harness.
+4. Avoid bespoke per-test setup when one reusable helper can handle the same pattern.
+
+## KMP test target policy
+
+Default:
+
+1. generated path tests -> `desktopTest` (or configured JVM test dir)
+2. pure logic tests -> `commonTest`
+3. screenshot baseline -> `desktopTest`
+4. optional Android screenshot parity -> `androidTest`
 
 ## Canonical setup coordinates
 
-Always apply these coordinates:
-
-- Plugin: `id("io.github.fshamim.stateproof") version "0.8.0-alpha01"`
-- Core: `implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01")`
-- Annotations: `implementation("io.github.fshamim:stateproof-annotations:0.8.0-alpha01")`
-- KSP: `ksp("io.github.fshamim:stateproof-ksp:0.8.0-alpha01")`
-- Viewer (test): `testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha01")`
-- Android navigation integration: `implementation("io.github.fshamim:stateproof-navigation:0.8.0-alpha01")` when needed
+- Plugin: `id("io.github.fshamim.stateproof") version "0.8.0-alpha02"`
+- Core: `implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha02")`
+- Annotations: `implementation("io.github.fshamim:stateproof-annotations:0.8.0-alpha02")`
+- KSP: `ksp("io.github.fshamim:stateproof-ksp:0.8.0-alpha02")`
+- Viewer (test): `testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02")`
+- Android navigation: `implementation("io.github.fshamim:stateproof-navigation:0.8.0-alpha02")` when needed
 
 Do not use `io.stateproof:*` Maven coordinates.
 
-## `/stateproof` workflow aliases
+## `/stateproof` aliases
 
-- `/stateproof setup` -> setup StateProof in the current project/module (detect `build.gradle.kts` vs `build.gradle` first; use local docs, no web search)
-- `/stateproof scan` -> run `./gradlew <module>:stateproofScan`
-- `/stateproof tests` -> run `./gradlew <module>:stateproofSyncAll`
-- `/stateproof diagram` -> run `./gradlew <module>:stateproofDiagrams`
-- `/stateproof viewer` -> run `./gradlew <module>:stateproofViewer`
-- `/stateproof watch` -> run `./gradlew <module>:stateproofWatch`
-- `/stateproof migrate-screens` -> use migration playbook
-- `/stateproof add-screen` -> use add-screen playbook
-
-## Mode selection rules
-
-- If Android + Compose + Nav are present, pick `SCREENS_AS_STATES`
-- Otherwise pick `STATE_MACHINE_ONLY`
-- Never inject navigation scaffolding into non-navigation JVM apps
+- `/stateproof setup` -> setup current module (DSL aware, local docs first)
+- `/stateproof scan` -> `./gradlew <module>:stateproofScan`
+- `/stateproof tests` -> `./gradlew <module>:stateproofSyncAll`
+- `/stateproof diagram` -> `./gradlew <module>:stateproofDiagrams`
+- `/stateproof viewer` -> `./gradlew <module>:stateproofViewer`
+- `/stateproof watch` -> `./gradlew <module>:stateproofWatch`
+- `/stateproof migrate-screens` -> migration playbook
+- `/stateproof add-screen` -> add-screen playbook
 
 ## Editing rules
 
-- Always detect Gradle DSL before edits and apply matching Kotlin/Groovy syntax.
-- For setup flow, use local StateProof docs/context; internet lookup is unnecessary.
-- Keep compile-safe changes first (dependencies + plugin + config)
-- Add state machine definitions and introspection factories next
-- Generate/sync tests last
-- If generation differs from expectation, trust state graph extraction and inspect guarded branches
-
-## Completion criteria
-
-- scan report generated
-- sync/diagram/viewer tasks all pass
-- docs/playbook links added where relevant
+- detect Kotlin/Groovy Gradle DSL before edits
+- use factory/KSP auto-discovery when possible
+- keep compile-safe changes first
+- preserve existing user test implementations
+- keep guarded branches explicit

@@ -1,443 +1,151 @@
-# Screens-as-States Pattern
+# Screens-as-States for Kotlin Multiplatform (StateProof)
 
-StateProof Navigation treats **screens as states** — a powerful pattern that makes your app's navigation provably correct and exhaustively testable.
+This document defines the canonical StateProof architecture for Kotlin Multiplatform apps.
 
-## The Problem with Traditional Navigation
+Use this as the source of truth for app structure, navigation/state boundaries, and generated-test strategy.
 
-In typical Android apps, navigation is imperative and scattered:
+## Core Rule Set
 
-```kotlin
-// Traditional approach - navigation calls everywhere
-Button(onClick = { navController.navigate("settings") }) { ... }
+1. Route state is separate from UI/business data.
+2. `AppState` is route-only (no embedded payload fields).
+3. Screen data lives in a reactive UI state container (`MutableStateFlow`-backed) owned by a shared KMP ViewModel-like class.
+4. UI sends interactions through a single `onEvents(...)` entrypoint.
+5. State machine side effects use repositories only (no direct DB/framework coupling).
+6. In-place content updates use `doNotTransition()` to avoid route changes.
 
-// Back handling is separate
-BackHandler { navController.popBackStack() }
+## Architecture Blueprint
 
-// Deep links are configured separately
-// Animation logic is separate
-// State is managed separately
-```
-
-This leads to:
-- **Untestable navigation** — Hard to verify all navigation paths
-- **Scattered logic** — Navigation, state, and UI are intertwined
-- **Implicit state** — The "current screen" is implicit in the back stack
-- **Manual back handling** — Must remember to handle back everywhere
-
-## The Solution: Screens-as-States
-
-With StateProof, screens ARE states in your state machine:
+### 1) Route-only state model
 
 ```kotlin
-sealed class States {
-    object Initial : States()
-    object Home : States()
-    object Settings : States()
-    object LoadPoint : States()
-    object Measurement : States()
-}
-
-sealed class Events {
-    object OnAppStart : Events()
-    object OnBack : Events()
-    object OnToSettings : Events()
-    object OnToLoadPoint : Events()
+sealed interface AppState {
+    data object Splash : AppState
+    data object Login : AppState
+    data object LoadingTasks : AppState
+    data object TaskList : AppState
+    data object TaskDetail : AppState
+    data object AuthError : AppState
 }
 ```
 
-Navigation becomes a **state transition**:
+`AppState` represents navigation/route only.
+
+### 2) Reactive UI state data
 
 ```kotlin
-val stateMachine = StateMachine<States, Events> {
-    initialState(States.Initial)
+data class MutableTaskAppStateData(
+    val _authToken: MutableStateFlow<String> = MutableStateFlow(""),
+    val _authErrorReason: MutableStateFlow<String?> = MutableStateFlow(null),
+    val _tasks: MutableStateFlow<List<TaskItem>> = MutableStateFlow(emptyList()),
+    val _selectedTaskId: MutableStateFlow<String?> = MutableStateFlow(null),
+)
+```
 
-    state<States.Initial> {
-        on<Events.OnAppStart> { transitionTo(States.Home) }
-    }
+Expose read-only `StateFlow`s to UI via a `TaskAppViewModelState` snapshot type.
 
-    state<States.Home> {
-        on<Events.OnToSettings> { transitionTo(States.Settings) }
-        on<Events.OnToLoadPoint> { transitionTo(States.LoadPoint) }
-        on<Events.OnBack> { /* exit app or show dialog */ }
-    }
+### 3) Shared KMP ViewModel-style facade
 
-    state<States.Settings> {
-        on<Events.OnBack> { transitionTo(States.Home) }
-    }
+```kotlin
+class TaskAppViewModel(
+    private val runtime: TaskProofRuntime,
+) {
+    val state: StateFlow<AppState> = runtime.stateMachine.state
+    val stateData: TaskAppViewModelState = ...
 
-    state<States.LoadPoint> {
-        on<Events.OnBack> { transitionTo(States.Home) }
-    }
+    fun onEvents(event: TaskAppViewEvent) { ... }
+    fun close() { ... }
 }
 ```
 
-## Real-World Example: Banking Transaction Workflow
+Use this same facade from Android/Desktop/iOS entrypoints.
 
-### Problem Statement
-
-Banking transaction flows require deterministic behavior:
-- A transfer request must not silently disappear or execute twice.
-- Validation, submission, OTP, and failure recovery must follow explicit rules.
-- The workflow should be reviewable as behavior, not hidden across UI callbacks and network code.
-
-For modeled transaction behavior, StateProof gives complete path coverage of the state graph and keeps generated tests synced as the flow evolves.
-
-Runtime queue semantics (emitted events are prioritized with queue-front insertion) are shown here:
-[`How Event Processing Works`](../README.md#how-event-processing-works-queue--side-effect-priority)
-
-### State + Event Model (with Data Class Events)
+### 4) Event routing
 
 ```kotlin
-sealed class TransferState {
-    object Form : TransferState()
-    object Submitting : TransferState()
-    data class AwaitingOtp(val transactionId: String) : TransferState()
-    data class Success(val receiptId: String) : TransferState()
-    data class Failed(val reason: String) : TransferState()
-}
-
-sealed class TransferEvent {
-    data class OnSubmit(
-        val fromAccountId: String,
-        val toAccountId: String,
-        val amountCents: Long,
-    ) : TransferEvent()
-    data class OnOtpEntered(val code: String) : TransferEvent()
-    object OnBack : TransferEvent()
-    data class OnOtpRequired(val transactionId: String) : TransferEvent()
-    data class OnTransferCompleted(val receiptId: String) : TransferEvent()
-    data class OnTransferFailed(val reason: String) : TransferEvent()
-}
+sealed interface TaskAppViewEvent
+sealed interface AppEvent : TaskAppViewEvent
+sealed interface LocalUiEvent : TaskAppViewEvent
 ```
 
-### State Machine DSL
+- `AppEvent`: forwarded to state machine.
+- `LocalUiEvent`: handled inline in ViewModel (local state cleanup, UI-only behavior).
+
+This keeps routing extensible for future multi-machine compositions.
+
+### 5) Repository-driven state machine side effects
+
+State transitions should call repositories and then mutate `MutableTaskAppStateData`.
 
 ```kotlin
-val transferMachine = stateMachine<TransferState, TransferEvent>(TransferState.Form) {
-    state<TransferState.Form> {
-        on<TransferEvent.OnSubmit> {
-            condition("amount > 0") { _, event -> event.amountCents > 0 } then {
-                transitionTo(TransferState.Submitting)
-                sideEffect { event ->
-                    val response = bankApi.createTransfer(
-                        fromAccountId = event.fromAccountId,
-                        toAccountId = event.toAccountId,
-                        amountCents = event.amountCents,
-                    )
-                    when (response) {
-                        is TransferResponse.OtpRequired ->
-                            TransferEvent.OnOtpRequired(response.transactionId)
-                        is TransferResponse.Success ->
-                            TransferEvent.OnTransferCompleted(response.receiptId)
-                        is TransferResponse.Failure ->
-                            TransferEvent.OnTransferFailed(response.reason)
-                    }
-                } emits (
-                    "otp_required" to TransferEvent.OnOtpRequired::class,
-                    "transfer_completed" to TransferEvent.OnTransferCompleted::class,
-                    "transfer_failed" to TransferEvent.OnTransferFailed::class,
-                )
-            }
-            otherwise { doNotTransition() }
-        }
-    }
-
-    state<TransferState.Submitting> {
-        on<TransferEvent.OnOtpRequired> { event ->
-            transitionTo(TransferState.AwaitingOtp(event.transactionId))
-        }
-        on<TransferEvent.OnTransferCompleted> { event ->
-            transitionTo(TransferState.Success(event.receiptId))
-        }
-        on<TransferEvent.OnTransferFailed> { event ->
-            transitionTo(TransferState.Failed(event.reason))
-        }
-    }
-
-    state<TransferState.AwaitingOtp> {
-        on<TransferEvent.OnOtpEntered> {
-            transitionTo(TransferState.Submitting)
-            sideEffect { event ->
-                val verify = bankApi.verifyOtp(event.code)
-                if (verify.isApproved) {
-                    TransferEvent.OnTransferCompleted(verify.receiptId)
-                } else {
-                    TransferEvent.OnTransferFailed("OTP verification failed")
-                }
-            } emits (
-                "transfer_completed" to TransferEvent.OnTransferCompleted::class,
-                "transfer_failed" to TransferEvent.OnTransferFailed::class,
-            )
-        }
-        on<TransferEvent.OnBack> { transitionTo(TransferState.Form) }
-    }
-
-    state<TransferState.Failed> {
-        on<TransferEvent.OnBack> { transitionTo(TransferState.Form) }
-    }
-}
-```
-
-## Benefits
-
-### 1. Exhaustive Test Coverage
-
-Every possible navigation path is enumerable:
-
-```kotlin
-// StateProof generates these automatically
-val paths = enumerator.generateTestCases()
-// [Initial → Home → Settings → Home]
-// [Initial → Home → LoadPoint → Home]
-// [Initial → Home → Settings → Home → LoadPoint → ...]
-```
-
-### 2. Single Source of Truth
-
-The state machine defines:
-- What screens exist
-- How to navigate between them
-- What happens on back
-- Side effects during transitions
-
-### 3. Automatic Back Handling
-
-Back is just another event:
-
-```kotlin
-StateProofNavHost(...) {
-    onBack { Events.OnBack }  // That's it!
-    // ...
-}
-```
-
-### 4. Declarative Navigation
-
-No imperative `navigate()` calls. Dispatch events, state changes, navigation follows:
-
-```kotlin
-// Instead of: navController.navigate("settings")
-stateMachine.onEvent(Events.OnToSettings)
-// StateProofNavHost automatically navigates to Settings
-```
-
-## Implementation with StateProofNavHost
-
-```kotlin
-@Composable
-fun MyApp() {
-    val navController = rememberNavController()
-    val stateMachine = remember { createStateMachine() }
-
-    StateProofNavHost(
-        stateMachine = stateMachine,
-        navController = navController,
-    ) {
-        // Map states to screens
-        screen<States.Home>("home") { state ->
-            HomeScreen(
-                onSettingsClick = { stateMachine.onEvent(Events.OnToSettings) },
-                onLoadPointClick = { stateMachine.onEvent(Events.OnToLoadPoint) },
-            )
-        }
-
-        screen<States.Settings>("settings") { state ->
-            SettingsScreen()
-        }
-
-        screen<States.LoadPoint>("loadpoint") { state ->
-            LoadPointScreen()
-        }
-
-        // Back handling
-        onBack { Events.OnBack }
-
-        // Animations
-        defaultAnimations(
-            enter = StateProofAnimations.slideInFromRight,
-            exit = StateProofAnimations.slideOutToLeft,
-            popEnter = StateProofAnimations.slideInFromLeft,
-            popExit = StateProofAnimations.slideOutToRight,
-        )
-    }
-}
-```
-
-## Pattern: Hierarchical States for Sub-Screens
-
-For screens with sub-states (like a measurement flow):
-
-```kotlin
-sealed class States {
-    object Home : States()
-
-    // Measurement has sub-states
-    sealed class Measurement : States() {
-        object Idle : Measurement()
-        object Measuring : Measurement()
-        object Complete : Measurement()
-    }
-}
-```
-
-All `Measurement` sub-states map to the same screen, but the screen renders differently:
-
-```kotlin
-screen<States.Measurement>("measurement") { state ->
-    when (state) {
-        is States.Measurement.Idle -> IdleUI()
-        is States.Measurement.Measuring -> MeasuringUI()
-        is States.Measurement.Complete -> CompleteUI()
-    }
-}
-```
-
-## Pattern: Passing Data Between Screens
-
-States can carry data:
-
-```kotlin
-sealed class States {
-    object Home : States()
-    data class LoadPoint(val pointId: String) : States()
-    data class Measurement(val loadPoint: LoadPointData) : States()
-}
-```
-
-The state is passed to the screen:
-
-```kotlin
-screen<States.LoadPoint> { state ->
-    LoadPointScreen(pointId = state.pointId)
-}
-
-screen<States.Measurement> { state ->
-    MeasurementScreen(loadPoint = state.loadPoint)
-}
-```
-
-## Pattern: Side Effects During Navigation
-
-Side effects run during state transitions, not in the UI:
-
-```kotlin
-state<States.Home> {
-    on<Events.OnToLoadPoint> { event ->
-        transitionTo(States.LoadPoint(event.pointId)) {
-            // Side effect: load data from database
-            val data = loadPointRepository.get(event.pointId)
-            updateUIState(data)
-            null  // No follow-up event
-        }
-    }
-}
-```
-
-## Comparison: Before and After
-
-### Before (Traditional)
-
-```kotlin
-// MainActivity.kt
-@Composable
-fun App() {
-    val navController = rememberNavController()
-    var currentData by remember { mutableStateOf<Data?>(null) }
-
-    NavHost(navController, startDestination = "home") {
-        composable("home") {
-            HomeScreen(
-                onSettingsClick = { navController.navigate("settings") },
-                onItemClick = { id ->
-                    currentData = loadData(id)  // Where does this go?
-                    navController.navigate("detail/$id")
-                }
-            )
-        }
-        composable("settings") { SettingsScreen() }
-        composable("detail/{id}") { DetailScreen(currentData) }
-    }
-
-    BackHandler {
-        if (!navController.popBackStack()) {
-            // Show exit dialog? Exit app?
-        }
-    }
-}
-```
-
-### After (Screens-as-States)
-
-```kotlin
-// StateMachine.kt - Single source of truth
-val sm = StateMachine<States, Events> {
-    initialState(States.Home)
-
-    state<States.Home> {
-        on<Events.OnToSettings> { transitionTo(States.Settings) }
-        on<Events.OnSelectItem> { event ->
-            transitionTo(States.Detail(event.id)) {
-                loadData(event.id)  // Side effect in state machine
+state<AppState.TaskList> {
+    on<AppEvent.OnToggleTask> {
+        doNotTransition()
+        sideEffect { event ->
+            when (val result = taskRepository.toggleTask(token, event.id)) {
+                is TaskToggleResult.Success -> AppEvent.OnTaskToggled(result.id, result.completed)
+                is TaskToggleResult.Failure -> AppEvent.OnTaskSaveFailed(result.reason)
             }
         }
-        on<Events.OnBack> { showExitDialog() }
-    }
-
-    state<States.Settings> {
-        on<Events.OnBack> { transitionTo(States.Home) }
-    }
-
-    state<States.Detail> {
-        on<Events.OnBack> { transitionTo(States.Home) }
-    }
-}
-
-// MainActivity.kt - Just wiring
-@Composable
-fun App() {
-    StateProofNavHost(stateMachine, navController) {
-        screen<States.Home> { HomeScreen(::onEvent) }
-        screen<States.Settings> { SettingsScreen() }
-        screen<States.Detail> { state -> DetailScreen(state.data) }
-        onBack { Events.OnBack }
     }
 }
 ```
 
-## Testing the Navigation
+`doNotTransition()` means route stays on `TaskList`; only content changes.
 
-With screens-as-states, navigation is fully testable:
+## Navigation and Animation Semantics
+
+- Route transitions animate according to destination mapping.
+- `doNotTransition()` should not trigger screen-route animation.
+- If UI still animates, verify that route state is unchanged and only `stateData` flows changed.
+
+## Testing Model
+
+StateProof-generated tests assert transition logs. Runtime harness logic can be auto-generated only when event invocation is compile-safe.
+
+### Generated tests authoring contract
+
+1. `expectedTransitions` inside `STATEPROOF:EXPECTED` is authoritative.
+2. If all path events are safely invokable, generator emits executable body.
+3. If any event is not safely invokable (or path is guarded/side-effect-complex), generator emits:
+   - commented scaffold body
+   - `STATEPROOF:MANUAL_REQUIRED` marker with reasons
+4. Preserve edits in user section only; generated section is managed by sync.
+5. Prefer helper-based customization (shared harness/util) over per-test custom logic.
+
+### Manual-required marker
+
+Generated tests may include:
 
 ```kotlin
-@Test
-fun `home to settings and back`() = runBlocking {
-    val sm = createStateMachine()
-
-    sm.onEvent(Events.OnAppStart)
-    sm.awaitIdle()
-    assertEquals(States.Home, sm.currentState)
-
-    sm.onEvent(Events.OnToSettings)
-    sm.awaitIdle()
-    assertEquals(States.Settings, sm.currentState)
-
-    sm.onEvent(Events.OnBack)
-    sm.awaitIdle()
-    assertEquals(States.Home, sm.currentState)
-}
+// STATEPROOF:MANUAL_REQUIRED - Auto body unavailable; review required
+// - OnSubmit: constructor requires arguments
+// - OnRetry: guarded transition 'token.exists' needs explicit test setup
 ```
 
-StateProof generates these tests automatically from the state graph!
+This marker is stable and should be treated as an explicit implementation task for AI/user.
 
-## Summary
+## KMP Test Target Policy
 
-| Aspect | Traditional | Screens-as-States |
-|--------|-------------|-------------------|
-| Navigation calls | Imperative, scattered | Events dispatched to state machine |
-| Current screen | Implicit in NavController | Explicit in state machine |
-| Back handling | Manual, per-screen | Single `onBack` event |
-| Side effects | Mixed with UI | In state transitions |
-| Testability | Hard | Automatic test generation |
-| Single source of truth | No | Yes (state machine) |
+For this repository and current StateProof toolchain:
 
-The screens-as-states pattern makes your navigation **provable, testable, and maintainable**.
+1. Generated path tests default to JVM-oriented source sets (`desktopTest` in KMP samples).
+2. `commonTest` is for hand-written pure logic tests (platform-agnostic code).
+3. Screenshot baseline testing should default to `desktopTest` for speed and deterministic host execution.
+4. Add Android screenshot tests optionally for Android-specific rendering/system parity.
+
+### Why not `commonTest` for generated path tests today
+
+- Current generator runtime uses JVM reflection in CLI workflows.
+- Viewer and related generation tooling are JVM-first.
+- Plugin target model is currently `jvm` / `android`.
+
+## Implementation Checklist (for new screens/flows)
+
+1. Add route-only state object(s) to `AppState`.
+2. Add/route events in `TaskAppViewEvent`.
+3. Add transitions in state machine.
+4. Keep data in `MutableTaskAppStateData` flows, not in state classes.
+5. Update repositories and side effects.
+6. Ensure `doNotTransition()` for in-place list/detail content updates.
+7. Sync generated tests and inspect any `STATEPROOF:MANUAL_REQUIRED` markers.
+8. Keep reusable harness helpers in one place and avoid duplicated per-test custom code.

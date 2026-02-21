@@ -53,8 +53,8 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha01")
-    implementation("io.github.fshamim:stateproof-navigation:0.8.0-alpha01")
+    implementation("io.github.fshamim:stateproof-core-jvm:0.8.0-alpha02")
+    implementation("io.github.fshamim:stateproof-navigation:0.8.0-alpha02")
 }
 ```
 

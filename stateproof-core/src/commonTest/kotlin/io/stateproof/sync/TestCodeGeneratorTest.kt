@@ -2,6 +2,7 @@ package io.stateproof.sync
 
 import io.stateproof.testgen.SimpleTestCase
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class TestCodeGeneratorTest {
@@ -68,11 +69,13 @@ class TestCodeGeneratorTest {
     }
 
     @Test
-    fun generateSingleTest_includesEventCalls() {
+    fun generateSingleTest_commentOnly_keepsCommentedBody() {
         val config = TestCodeGenConfig(
             packageName = "com.example.test",
             testClassName = "GeneratedTest",
             eventClassPrefix = "Events",
+            generatedBodyPolicy = GeneratedBodyPolicy.COMMENT_ONLY,
+            eventInvocationByName = mapOf("ToB" to "Events.ToB"),
         )
 
         val testCase = SimpleTestCase(
@@ -84,6 +87,82 @@ class TestCodeGeneratorTest {
 
         val code = TestCodeGenerator.generateSingleTest(config, testCase, "2024-01-15T10:00:00Z")
 
+        assertTrue(code.contains("// sm.onEvent(Events.ToB)"))
+        assertFalse(code.contains("STATEPROOF:MANUAL_REQUIRED"))
+    }
+
+    @Test
+    fun generateSingleTest_safeAutogen_emitsExecutableBodyWhenResolvable() {
+        val config = TestCodeGenConfig(
+            packageName = "com.example.test",
+            testClassName = "GeneratedTest",
+            eventClassPrefix = "Events",
+            generatedBodyPolicy = GeneratedBodyPolicy.SAFE_AUTOGEN,
+            eventInvocationByName = mapOf("ToB" to "Events.ToB"),
+        )
+
+        val testCase = SimpleTestCase(
+            name = "_3_ABCD_A_ToB_B",
+            path = listOf("A", "ToB", "B"),
+            expectedTransitions = listOf("A_ToB_B"),
+            eventSequence = listOf("ToB"),
+        )
+
+        val code = TestCodeGenerator.generateSingleTest(config, testCase, "2024-01-15T10:00:00Z")
+
+        assertTrue(code.contains("val sm = createStateMachine()"))
+        assertTrue(code.contains("sm.onEvent(Events.ToB)"))
+        assertTrue(code.contains("assertEquals(expectedTransitions, sm.getTransitionLog())"))
+        assertFalse(code.contains("// sm.onEvent"))
+        assertFalse(code.contains("STATEPROOF:MANUAL_REQUIRED"))
+    }
+
+    @Test
+    fun generateSingleTest_safeAutogen_marksManualRequiredWhenInvocationMissing() {
+        val config = TestCodeGenConfig(
+            packageName = "com.example.test",
+            testClassName = "GeneratedTest",
+            eventClassPrefix = "Events",
+            generatedBodyPolicy = GeneratedBodyPolicy.SAFE_AUTOGEN,
+            eventInvocationByName = emptyMap(),
+        )
+
+        val testCase = SimpleTestCase(
+            name = "_3_ABCD_A_ToB_B",
+            path = listOf("A", "ToB", "B"),
+            expectedTransitions = listOf("A_ToB_B"),
+            eventSequence = listOf("ToB"),
+        )
+
+        val code = TestCodeGenerator.generateSingleTest(config, testCase, "2024-01-15T10:00:00Z")
+
+        assertTrue(code.contains(StateProofMarkers.MANUAL_REQUIRED))
+        assertTrue(code.contains("ToB: unresolved invocation expression"))
+        assertTrue(code.contains("// sm.onEvent(Events.ToB)"))
+    }
+
+    @Test
+    fun generateSingleTest_safeAutogen_marksManualRequiredWhenExplicitReasonPresent() {
+        val config = TestCodeGenConfig(
+            packageName = "com.example.test",
+            testClassName = "GeneratedTest",
+            eventClassPrefix = "Events",
+            generatedBodyPolicy = GeneratedBodyPolicy.SAFE_AUTOGEN,
+            eventInvocationByName = mapOf("ToB" to "Events.ToB"),
+            manualReviewReasonsByEvent = mapOf("ToB" to listOf("guarded transition needs setup")),
+        )
+
+        val testCase = SimpleTestCase(
+            name = "_3_ABCD_A_ToB_B",
+            path = listOf("A", "ToB", "B"),
+            expectedTransitions = listOf("A_ToB_B"),
+            eventSequence = listOf("ToB"),
+        )
+
+        val code = TestCodeGenerator.generateSingleTest(config, testCase, "2024-01-15T10:00:00Z")
+
+        assertTrue(code.contains(StateProofMarkers.MANUAL_REQUIRED))
+        assertTrue(code.contains("ToB: guarded transition needs setup"))
         assertTrue(code.contains("// sm.onEvent(Events.ToB)"))
     }
 
@@ -181,11 +260,8 @@ class TestCodeGeneratorTest {
             timestamp = "2024-01-16T10:00:00Z",
         )
 
-        // Should have new transitions
         assertTrue(updated.contains("NEW_TRANSITION_A"))
         assertTrue(updated.contains("NEW_TRANSITION_B"))
-
-        // Should preserve user code
         assertTrue(updated.contains("MY CUSTOM USER CODE"))
         assertTrue(updated.contains("myCustomFactory"))
     }

@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - "v0.8.0-alpha01"
+      - "v0.8.0-alpha*"
+  workflow_dispatch:
 
 jobs:
   publish:

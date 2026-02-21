@@ -194,18 +194,18 @@ class StateGraphIntrospectionTest {
     }
 
     @Test
-    fun toStateGraph_marksUnknownTargetsWhenResolutionFails() {
+    fun toStateGraph_resolvesDataStateTargetsWithPlaceholderInstances() {
         val sm = unknownTargetMachine()
         val graph = sm.toStateGraph()
 
-        val unknownEdge = graph.transitions.singleOrNull {
+        val edge = graph.transitions.singleOrNull {
             it.eventName == "Go" &&
                 graph.states.any { state -> state.id == it.fromStateId && state.displayName == "NeedsData" }
         }
-        assertNotNull(unknownEdge)
-        assertFalse(unknownEdge.targetKnown)
-        assertNull(unknownEdge.toStateId)
-        assertEquals("?", unknownEdge.toStateDisplayName)
+        assertNotNull(edge)
+        assertTrue(edge.targetKnown)
+        assertNotNull(edge.toStateId)
+        assertEquals("NeedsData", edge.toStateDisplayName)
 
         sm.close()
     }

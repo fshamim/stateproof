@@ -15,7 +15,12 @@ object StateProofAutoMocks {
 
     inline fun <reified T : Any> provide(): T = provide(T::class) as T
 
-    fun provide(kclass: KClass<*>): Any {
+    fun provide(kclass: KClass<*>): Any = provideInternal(kclass, mutableSetOf())
+
+    private fun provideInternal(
+        kclass: KClass<*>,
+        inProgress: MutableSet<KClass<*>>,
+    ): Any {
         defaultForPrimitive(kclass)?.let { return it }
 
         if (isKotlinFunction(kclass.java)) {
@@ -45,8 +50,10 @@ object StateProofAutoMocks {
         try {
             return kclass.java.getDeclaredConstructor().newInstance()
         } catch (_: Exception) {
-            // Fall through to MockK
+            // Fall through
         }
+
+        tryConstructWithDefaults(kclass, inProgress)?.let { return it }
 
         tryMockk(kclass)?.let { return it }
 
@@ -63,6 +70,77 @@ object StateProofAutoMocks {
                 "Add a no-arg constructor or include MockK on the test runtime classpath."
         )
     }
+
+    private fun tryConstructWithDefaults(
+        kclass: KClass<*>,
+        inProgress: MutableSet<KClass<*>>,
+    ): Any? {
+        if (!inProgress.add(kclass)) return null
+        try {
+            val constructors = kclass.java.declaredConstructors
+                .filterNot { ctor ->
+                    val params = ctor.parameterTypes
+                    params.isNotEmpty() &&
+                        params.last().name == "kotlin.jvm.internal.DefaultConstructorMarker"
+                }
+                .sortedBy { it.parameterCount }
+
+            for (ctor in constructors) {
+                val args = arrayOfNulls<Any?>(ctor.parameterCount)
+                var ok = true
+                for ((index, paramType) in ctor.parameterTypes.withIndex()) {
+                    val resolved = resolveConstructorArg(paramType, inProgress)
+                    if (resolved === UNRESOLVED) {
+                        ok = false
+                        break
+                    }
+                    args[index] = resolved
+                }
+                if (!ok) continue
+
+                try {
+                    ctor.isAccessible = true
+                    return ctor.newInstance(*args)
+                } catch (_: Exception) {
+                    // Try next constructor
+                }
+            }
+            return null
+        } finally {
+            inProgress.remove(kclass)
+        }
+    }
+
+    private fun resolveConstructorArg(
+        paramType: Class<*>,
+        inProgress: MutableSet<KClass<*>>,
+    ): Any? {
+        defaultReturnValue(paramType)?.let { return it }
+
+        if (List::class.java.isAssignableFrom(paramType)) return emptyList<Any>()
+        if (Set::class.java.isAssignableFrom(paramType)) return emptySet<Any>()
+        if (Map::class.java.isAssignableFrom(paramType)) return emptyMap<Any, Any>()
+
+        if (paramType.isEnum) {
+            val constants = paramType.enumConstants
+            if (constants != null && constants.isNotEmpty()) return constants[0]
+        }
+
+        if (paramType.isArray) return java.lang.reflect.Array.newInstance(paramType.componentType, 0)
+        if (CoroutineDispatcher::class.java.isAssignableFrom(paramType)) return Dispatchers.Unconfined
+        if (CoroutineScope::class.java.isAssignableFrom(paramType)) return CoroutineScope(Dispatchers.Unconfined)
+        if (isKotlinFunction(paramType)) return emptyFunction(paramType)
+        if (paramType.isInterface) return interfaceProxy(paramType)
+        if (paramType == Any::class.java || paramType == java.lang.Object::class.java) return null
+
+        return try {
+            provideInternal(paramType.kotlin, inProgress)
+        } catch (_: Exception) {
+            UNRESOLVED
+        }
+    }
+
+    private object UNRESOLVED
 
     private fun defaultForPrimitive(kclass: KClass<*>): Any? = when (kclass) {
         Boolean::class -> false
