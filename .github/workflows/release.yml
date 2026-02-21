@@ -1,4 +1,4 @@
-name: Release
+name: Release Validation
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  publish:
+  verify-release:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,20 +26,5 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Publish to Maven Central
-        run: ./gradlew clean build publish
-        env:
-          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
-          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-
-      - name: Finalize Central deployment
-        run: |
-          curl --fail-with-body \
-            -u "${CENTRAL_USERNAME}:${CENTRAL_PASSWORD}" \
-            -X POST \
-            "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/io.github.fshamim?publishing_type=automatic"
-        env:
-          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
-          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+      - name: Build and test (no publish)
+        run: ./gradlew clean build
