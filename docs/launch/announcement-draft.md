@@ -1,5 +1,7 @@
 # StateProof `0.8.0-alpha02` Announcement Draft
 
+> Draft status: launch posting is intentionally deferred until Sprint 8 screenshot MVP is complete.
+
 StateProof `0.8.0-alpha02` is now available as a Maven Central prerelease.
 
 ## What this release focuses on

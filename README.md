@@ -843,12 +843,15 @@ androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 - `docs/launch/launch-day-checklist.md` - operational launch checklist
 - `docs/launch/announcement-draft.md` - announcement starter copy
 
+> Launch payload execution is deferred until Screenshot Testing MVP (Sprint 8 launch gate) is complete.
+> Planning pointer: [Tasks.md](Tasks.md) (canonical tracker is maintained in the private integration workspace).
+
 ## Roadmap (Planned)
 
 These items are planned next and intentionally not treated as current guarantees:
 
 - IDE plugins for IntelliJ IDEA and Android Studio guidance/automation
-- screenshot test generation integration for visual regression confidence and story-like flow playback
+- advanced screenshot testing enhancements beyond the OSS MVP baseline
 - edge-case test generation integration for broader failure-path coverage
 
 ## Modules

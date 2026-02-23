@@ -1,5 +1,9 @@
 # Launch Day Checklist (`0.8.0-alpha02`)
 
+## Launch Gate (must be complete before launch execution)
+
+- [ ] Sprint 8 screenshot MVP complete (module, generated screenshot tests, diff reporting, docs/tests)
+
 ## Release Engineering
 
 - [ ] `stateproofVersion` is `0.8.0-alpha02` in `gradle.properties`
@@ -9,7 +13,7 @@
 - [ ] Tag pushed to origin
 - [ ] Central publish workflow passed
 
-## Consumer Validation (iCages)
+## Consumer Validation (companion app)
 
 - [ ] `rm -rf ~/.gradle/caches/modules-2/files-2.1/io.github.fshamim`
 - [ ] `./gradlew :app:stateproofScan` passes
