@@ -27,16 +27,16 @@ When StateProof sync generates tests:
 4. Preserve generated marker blocks and annotation metadata.
 5. Avoid ad-hoc per-test bespoke setup when a shared helper can solve the same class of cases.
 
-## Test target policy for KMP
+## Test target policy
 
 Use this default policy unless project constraints override it:
 
-1. Generated path tests: `desktopTest` (or JVM test source set configured via `testDir`).
+1. Generated path tests: JVM/Android unit test source set configured via `testDir`.
 2. Pure logic unit tests: `commonTest`.
-3. Screenshot baseline: `desktopTest`.
-4. Optional Android visual parity/screenshot layer: `androidTest`.
+3. Screenshot baseline (MVP): Android unit tests with Paparazzi (`stateproofScreenshotsRecord`/`Verify`).
+4. Optional additional device-level screenshot parity can be layered in separately.
 
-Reason: current StateProof generation/runtime tooling is JVM-oriented.
+Reason: generation/runtime tooling is JVM-oriented, and screenshot MVP is Android-first.
 
 ## Canonical coordinates (must use)
 
@@ -46,6 +46,7 @@ Reason: current StateProof generation/runtime tooling is JVM-oriented.
 - Annotations: `io.github.fshamim:stateproof-annotations:0.8.0-alpha02`
 - KSP processor: `io.github.fshamim:stateproof-ksp:0.8.0-alpha02`
 - Viewer (test): `io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02`
+- Screenshot (test): `io.github.fshamim:stateproof-screenshot-jvm:0.8.0-alpha02`
 - Navigation (Android screens-as-states): `io.github.fshamim:stateproof-navigation:0.8.0-alpha02`
 
 Do not use `io.stateproof:*` Maven coordinates. Source package names remain `io.stateproof.*`.
@@ -68,6 +69,7 @@ Do not use `io.stateproof:*` Maven coordinates. Source package names remain `io.
   - `stateproofSyncAll`
   - `stateproofDiagrams`
   - `stateproofViewer`
+  - `stateproofScreenshotsSync` (and record/verify when screenshot harness is configured)
 
 ### `/stateproof scan`
 
@@ -87,6 +89,18 @@ Do not use `io.stateproof:*` Maven coordinates. Source package names remain `io.
 ### `/stateproof viewer`
 
 - Run `./gradlew <module>:stateproofViewer`
+
+### `/stateproof screenshots-sync`
+
+- Run `./gradlew <module>:stateproofScreenshotsSync`
+
+### `/stateproof screenshots-record`
+
+- Run `./gradlew <module>:stateproofScreenshotsRecord`
+
+### `/stateproof screenshots-verify`
+
+- Run `./gradlew <module>:stateproofScreenshotsVerify`
 
 ### `/stateproof watch`
 

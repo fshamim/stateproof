@@ -6,4 +6,5 @@ This public repository keeps a link-only pointer to avoid duplicating private pr
 
 Current execution direction:
 
-- Launch payload execution is deferred until Sprint 8 screenshot MVP is complete in the canonical tracker.
+- Sprint 8 screenshot MVP is complete in the canonical tracker.
+- Sprint 14 launch payload execution is ready to resume.

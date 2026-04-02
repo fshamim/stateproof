@@ -37,6 +37,7 @@ Follow `docs/SCREENS_AS_STATES.md` exactly:
    - implement in small safe slices
 5. **Verify**
    - run `stateproofSyncAll`, `stateproofDiagrams`, `stateproofViewer`
+   - for screenshot-enabled machines run `stateproofScreenshotsSync`, `stateproofScreenshotsRecord`, `stateproofScreenshotsVerify`
    - verify generated outputs are non-empty
 
 ## Generated test handling rules
@@ -47,14 +48,14 @@ Follow `docs/SCREENS_AS_STATES.md` exactly:
 4. Never edit the generated expected-transition marker block manually.
 5. Prefer one helper for repeated runtime setup over custom per-test logic.
 
-## KMP test target policy
+## Test target policy
 
 Default policy:
 
-1. generated StateProof paths -> `desktopTest` (or configured JVM `testDir`)
+1. generated StateProof paths -> JVM/Android unit tests (`testDir` / `androidTestDir`)
 2. pure platform-agnostic logic -> `commonTest`
-3. screenshot baseline -> `desktopTest`
-4. optional Android visual parity -> `androidTest`
+3. screenshot baseline (MVP) -> Android unit tests with Paparazzi
+4. optional device-level screenshot parity -> separate layer
 
 ## Canonical setup coordinates
 
@@ -63,6 +64,7 @@ Default policy:
 - Annotations: `implementation("io.github.fshamim:stateproof-annotations:0.8.0-alpha02")`
 - KSP: `ksp("io.github.fshamim:stateproof-ksp:0.8.0-alpha02")`
 - Viewer (test): `testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02")`
+- Screenshot (test): `testImplementation("io.github.fshamim:stateproof-screenshot-jvm:0.8.0-alpha02")`
 - Android navigation: `implementation("io.github.fshamim:stateproof-navigation:0.8.0-alpha02")` when needed
 
 Do not use `io.stateproof:*` Maven coordinates.
@@ -74,6 +76,9 @@ Do not use `io.stateproof:*` Maven coordinates.
 - `/stateproof tests` -> `stateproofSyncAll`
 - `/stateproof diagram` -> `stateproofDiagrams`
 - `/stateproof viewer` -> `stateproofViewer`
+- `/stateproof screenshots-sync` -> `stateproofScreenshotsSync`
+- `/stateproof screenshots-record` -> `stateproofScreenshotsRecord`
+- `/stateproof screenshots-verify` -> `stateproofScreenshotsVerify`
 - `/stateproof watch` -> `stateproofWatch`
 - `/stateproof migrate-screens` -> use `docs/playbooks/migration-existing-android-kmp.md`
 - `/stateproof add-screen` -> use `docs/playbooks/add-screen-event-back.md`

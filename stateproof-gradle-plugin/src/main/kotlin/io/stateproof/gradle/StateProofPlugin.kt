@@ -127,6 +127,25 @@ class StateProofPlugin : Plugin<Project> {
             task.configureFrom(extension)
             configureTaskForSyncInputs(project, task)
         }
+
+        project.tasks.register("stateproofScreenshotsSync", StateProofScreenshotSyncTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Sync screenshot tests for the configured state machine"
+            task.configureFrom(extension)
+            configureTaskForSyncInputs(project, task)
+        }
+
+        project.tasks.register("stateproofScreenshotsSyncAll") { task ->
+            task.group = TASK_GROUP
+            task.description = "Alias for stateproofScreenshotsSync"
+            task.dependsOn("stateproofScreenshotsSync")
+        }
+
+        registerScreenshotRecordAndVerifyTasks(
+            project = project,
+            extension = extension,
+            syncTaskName = "stateproofScreenshotsSyncAll",
+        )
     }
 
     private fun configureTaskForAndroidSingleMode(task: StateProofSyncTask, extension: StateProofExtension) {
@@ -147,6 +166,7 @@ class StateProofPlugin : Plugin<Project> {
         val allSyncTasks = mutableListOf<String>()
         val allDiagramTasks = mutableListOf<String>()
         val allViewerTasks = mutableListOf<String>()
+        val allScreenshotSyncTasks = mutableListOf<String>()
 
         extension.stateMachines.forEach { smConfig ->
             val name = smConfig.name
@@ -196,6 +216,17 @@ class StateProofPlugin : Plugin<Project> {
                 task.configureFromStateMachineConfig(smConfig, extension)
                 configureTaskForSyncInputs(project, task)
             }
+
+            if (smConfig.screenshotHarnessFactoryFqn.orNull?.isNotBlank() == true) {
+                val screenshotTaskName = "stateproofScreenshotsSync$capitalizedName"
+                allScreenshotSyncTasks.add(screenshotTaskName)
+                project.tasks.register(screenshotTaskName, StateProofScreenshotSyncTask::class.java) { task ->
+                    task.group = TASK_GROUP
+                    task.description = "Sync screenshot tests for $name state machine"
+                    task.configureFromStateMachineConfig(smConfig, extension)
+                    configureTaskForSyncInputs(project, task)
+                }
+            }
         }
 
         // Aggregate task
@@ -228,6 +259,36 @@ class StateProofPlugin : Plugin<Project> {
             task.description = "Alias for stateproofViewerAll"
             task.dependsOn("stateproofViewerAll")
         }
+
+        if (allScreenshotSyncTasks.isNotEmpty()) {
+            project.tasks.register("stateproofScreenshotsSyncAll") { task ->
+                task.group = TASK_GROUP
+                task.description = "Sync screenshot tests for screenshot-enabled state machines"
+                task.dependsOn(allScreenshotSyncTasks)
+            }
+        } else {
+            project.tasks.register("stateproofScreenshotsSyncAll") { task ->
+                task.group = TASK_GROUP
+                task.description = "No screenshot-enabled state machines configured"
+                task.doLast {
+                    project.logger.lifecycle(
+                        "No screenshotHarnessFactoryFqn configured in stateproof.stateMachines; nothing to sync."
+                    )
+                }
+            }
+        }
+
+        project.tasks.register("stateproofScreenshotsSync") { task ->
+            task.group = TASK_GROUP
+            task.description = "Alias for stateproofScreenshotsSyncAll"
+            task.dependsOn("stateproofScreenshotsSyncAll")
+        }
+
+        registerScreenshotRecordAndVerifyTasks(
+            project = project,
+            extension = extension,
+            syncTaskName = "stateproofScreenshotsSyncAll",
+        )
     }
 
     /**
@@ -350,6 +411,96 @@ class StateProofPlugin : Plugin<Project> {
             task.group = TASK_GROUP
             task.description = "Alias for stateproofViewerAll"
             task.dependsOn("stateproofViewerAll")
+        }
+
+        project.tasks.register("stateproofScreenshotsSyncAll", StateProofAutoScreenshotSyncTask::class.java) { task ->
+            task.group = TASK_GROUP
+            task.description = "Sync screenshot tests for discovered screenshot-enabled state machines"
+            task.screenshotOutputDir.set(extension.screenshotTestDir)
+            task.screenshotCaptureMode.set(extension.screenshotCaptureMode)
+            task.screenshotStrict.set(extension.screenshotStrict)
+            task.classpathConfiguration.set(extension.classpathConfiguration)
+            configureTaskForSyncInputs(project, task)
+        }
+
+        project.tasks.register("stateproofScreenshotsSync") { task ->
+            task.group = TASK_GROUP
+            task.description = "Alias for stateproofScreenshotsSyncAll"
+            task.dependsOn("stateproofScreenshotsSyncAll")
+        }
+
+        registerScreenshotRecordAndVerifyTasks(
+            project = project,
+            extension = extension,
+            syncTaskName = "stateproofScreenshotsSyncAll",
+        )
+    }
+
+    private fun registerScreenshotRecordAndVerifyTasks(
+        project: Project,
+        extension: StateProofExtension,
+        syncTaskName: String,
+    ) {
+        wireScreenshotSyncIntoTestCompilation(project, syncTaskName)
+
+        project.tasks.register("stateproofScreenshotsRecord") { task ->
+            task.group = TASK_GROUP
+            task.description = "Sync screenshot tests and run Paparazzi record task"
+            task.dependsOn(syncTaskName)
+
+            val externalTaskName = extension.screenshotRecordTaskName.get()
+            val externalTask = project.tasks.findByName(externalTaskName)
+            if (externalTask != null) {
+                task.dependsOn(externalTaskName)
+            } else {
+                task.doFirst {
+                    throw org.gradle.api.GradleException(
+                        "Paparazzi record task '$externalTaskName' was not found. " +
+                            "Apply the Paparazzi plugin and configure stateproof.screenshotRecordTaskName if needed."
+                    )
+                }
+            }
+        }
+
+        project.tasks.register("stateproofScreenshotsVerify") { task ->
+            task.group = TASK_GROUP
+            task.description = "Sync screenshot tests and run Paparazzi verify task"
+            task.dependsOn(syncTaskName)
+
+            val externalTaskName = extension.screenshotVerifyTaskName.get()
+            val externalTask = project.tasks.findByName(externalTaskName)
+            if (externalTask != null) {
+                task.dependsOn(externalTaskName)
+            } else {
+                task.doFirst {
+                    throw org.gradle.api.GradleException(
+                        "Paparazzi verify task '$externalTaskName' was not found. " +
+                            "Apply the Paparazzi plugin and configure stateproof.screenshotVerifyTaskName if needed."
+                    )
+                }
+            }
+        }
+    }
+
+    private fun wireScreenshotSyncIntoTestCompilation(project: Project, syncTaskName: String) {
+        val testCompilationTasks = listOf(
+            "kspUnitTestKotlin",
+            "kspDebugUnitTestKotlin",
+            "kspReleaseUnitTestKotlin",
+            "compileUnitTestKotlin",
+            "compileDebugUnitTestKotlin",
+            "compileReleaseUnitTestKotlin",
+        )
+        val paparazziTasks = listOf(
+            "recordPaparazzi",
+            "recordPaparazziDebug",
+            "recordPaparazziRelease",
+            "verifyPaparazzi",
+            "verifyPaparazziDebug",
+            "verifyPaparazziRelease",
+        )
+        (testCompilationTasks + paparazziTasks).forEach { taskName ->
+            project.tasks.findByName(taskName)?.dependsOn(syncTaskName)
         }
     }
 
@@ -771,6 +922,7 @@ class StateProofPlugin : Plugin<Project> {
         const val TASK_GROUP = "stateproof"
         const val CLI_MAIN_CLASS = "io.stateproof.cli.StateProofCli"
         const val VIEWER_CLI_MAIN_CLASS = "io.stateproof.viewer.cli.StateProofViewerCli"
+        const val SCREENSHOT_CLI_MAIN_CLASS = "io.stateproof.screenshot.cli.StateProofScreenshotCli"
         const val WATCH_COMMAND_SEPARATOR = "\u001F"
     }
 }

@@ -22,6 +22,7 @@ Use `docs/SCREENS_AS_STATES.md` as mandatory design contract:
 4. propose short implementation plan
 5. apply changes in small slices
 6. verify sync/diagram/viewer tasks
+7. for screenshot-enabled machines run screenshot sync/record/verify tasks
 
 ## Generated test guidance
 
@@ -30,14 +31,14 @@ Use `docs/SCREENS_AS_STATES.md` as mandatory design contract:
 3. For tests marked `STATEPROOF:MANUAL_REQUIRED`, implement through shared helper/harness.
 4. Avoid bespoke per-test setup when one reusable helper can handle the same pattern.
 
-## KMP test target policy
+## Test target policy
 
 Default:
 
-1. generated path tests -> `desktopTest` (or configured JVM test dir)
+1. generated path tests -> JVM/Android unit test dirs (`testDir` / `androidTestDir`)
 2. pure logic tests -> `commonTest`
-3. screenshot baseline -> `desktopTest`
-4. optional Android screenshot parity -> `androidTest`
+3. screenshot baseline (MVP) -> Android unit tests with Paparazzi
+4. optional device-level screenshot parity -> separate layer
 
 ## Canonical setup coordinates
 
@@ -46,6 +47,7 @@ Default:
 - Annotations: `implementation("io.github.fshamim:stateproof-annotations:0.8.0-alpha02")`
 - KSP: `ksp("io.github.fshamim:stateproof-ksp:0.8.0-alpha02")`
 - Viewer (test): `testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02")`
+- Screenshot (test): `testImplementation("io.github.fshamim:stateproof-screenshot-jvm:0.8.0-alpha02")`
 - Android navigation: `implementation("io.github.fshamim:stateproof-navigation:0.8.0-alpha02")` when needed
 
 Do not use `io.stateproof:*` Maven coordinates.
@@ -57,6 +59,9 @@ Do not use `io.stateproof:*` Maven coordinates.
 - `/stateproof tests` -> `./gradlew <module>:stateproofSyncAll`
 - `/stateproof diagram` -> `./gradlew <module>:stateproofDiagrams`
 - `/stateproof viewer` -> `./gradlew <module>:stateproofViewer`
+- `/stateproof screenshots-sync` -> `./gradlew <module>:stateproofScreenshotsSync`
+- `/stateproof screenshots-record` -> `./gradlew <module>:stateproofScreenshotsRecord`
+- `/stateproof screenshots-verify` -> `./gradlew <module>:stateproofScreenshotsVerify`
 - `/stateproof watch` -> `./gradlew <module>:stateproofWatch`
 - `/stateproof migrate-screens` -> migration playbook
 - `/stateproof add-screen` -> add-screen playbook

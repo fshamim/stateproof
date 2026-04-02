@@ -124,20 +124,20 @@ Generated tests may include:
 
 This marker is stable and should be treated as an explicit implementation task for AI/user.
 
-## KMP Test Target Policy
+## Test Target Policy
 
 For this repository and current StateProof toolchain:
 
-1. Generated path tests default to JVM-oriented source sets (`desktopTest` in KMP samples).
+1. Generated path tests default to JVM-oriented source sets (`test` / configured `testDir`).
 2. `commonTest` is for hand-written pure logic tests (platform-agnostic code).
-3. Screenshot baseline testing should default to `desktopTest` for speed and deterministic host execution.
-4. Add Android screenshot tests optionally for Android-specific rendering/system parity.
+3. Screenshot testing MVP uses Android unit tests with Paparazzi (`stateproofScreenshotsRecord`/`stateproofScreenshotsVerify`).
+4. Additional device-level screenshot parity is optional and layered separately.
 
 ### Why not `commonTest` for generated path tests today
 
 - Current generator runtime uses JVM reflection in CLI workflows.
 - Viewer and related generation tooling are JVM-first.
-- Plugin target model is currently `jvm` / `android`.
+- Screenshot generation/sync workflow is Android-first in the OSS MVP.
 
 ## Implementation Checklist (for new screens/flows)
 

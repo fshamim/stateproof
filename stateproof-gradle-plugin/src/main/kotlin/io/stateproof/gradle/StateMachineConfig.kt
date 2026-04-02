@@ -121,6 +121,30 @@ abstract class StateMachineConfig @Inject constructor(
     abstract val testClassName: Property<String>
 
     /**
+     * Screenshot harness factory FQN used for screenshot test generation.
+     * Format: "com.package.FileKt#createHarness"
+     */
+    @get:Input
+    @get:Optional
+    abstract val screenshotHarnessFactoryFqn: Property<String>
+
+    /**
+     * Package name for generated screenshot tests.
+     * Defaults to testPackage / provider package.
+     */
+    @get:Input
+    @get:Optional
+    abstract val screenshotTestPackage: Property<String>
+
+    /**
+     * Class name for generated screenshot tests.
+     * Defaults to "<effectiveTestClassNameWithoutTest>ScreenshotTest".
+     */
+    @get:Input
+    @get:Optional
+    abstract val screenshotTestClassName: Property<String>
+
+    /**
      * State machine factory expression used in generated test code.
      */
     @get:Input
@@ -256,5 +280,28 @@ abstract class StateMachineConfig @Inject constructor(
         } else {
             jvmName + "Android"
         }
+    }
+
+    /**
+     * Derives the package name for generated screenshot tests.
+     */
+    fun getEffectiveScreenshotPackage(): String {
+        val explicit = screenshotTestPackage.orNull
+        if (!explicit.isNullOrBlank()) {
+            return explicit
+        }
+        return getEffectivePackage()
+    }
+
+    /**
+     * Derives the class name for generated screenshot tests.
+     */
+    fun getEffectiveScreenshotClassName(): String {
+        val explicit = screenshotTestClassName.orNull
+        if (!explicit.isNullOrBlank()) {
+            return explicit
+        }
+        val base = getEffectiveClassName().removeSuffix("Test")
+        return "${base}ScreenshotTest"
     }
 }

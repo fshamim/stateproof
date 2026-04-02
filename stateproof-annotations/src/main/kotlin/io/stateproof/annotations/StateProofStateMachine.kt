@@ -22,4 +22,10 @@ annotation class StateProofStateMachine(
     val additionalImports: Array<String> = [],
     /** Test targets to generate. Valid values: "jvm", "android". */
     val targets: Array<String> = ["jvm", "android"],
+    /** Optional screenshot harness factory FQN used by screenshot sync-all. */
+    val screenshotHarnessFactoryFqn: String = "",
+    /** Optional override for generated screenshot test package. */
+    val screenshotTestPackage: String = "",
+    /** Optional override for generated screenshot test class name. */
+    val screenshotTestClassName: String = "",
 )

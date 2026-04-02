@@ -68,6 +68,12 @@ class StateProofProcessor(
                 ?.map { it.lowercase() }
                 ?.ifEmpty { listOf("jvm", "android") }
                 ?: listOf("jvm", "android")
+            val screenshotHarnessFactoryFqn =
+                (args["screenshotHarnessFactoryFqn"]?.value as? String).orEmpty()
+            val screenshotTestPackage =
+                (args["screenshotTestPackage"]?.value as? String).orEmpty()
+            val screenshotTestClassName =
+                (args["screenshotTestClassName"]?.value as? String).orEmpty()
 
             val baseName = deriveBaseName(name, fn.simpleName.asString())
             val sanitizedBaseName = sanitizeBaseName(baseName)
@@ -117,6 +123,9 @@ class StateProofProcessor(
                     stateMachineFactory = stateMachineFactory,
                     additionalImports = additionalImports,
                     targets = targets,
+                    screenshotHarnessFactoryFqn = screenshotHarnessFactoryFqn,
+                    screenshotTestPackage = screenshotTestPackage,
+                    screenshotTestClassName = screenshotTestClassName,
                     containingFile = fn.containingFile,
                 )
             )
@@ -199,6 +208,9 @@ class StateProofProcessor(
             builder.appendLine("            stateMachineFactory = \"${escape(meta.stateMachineFactory)}\",")
             builder.appendLine("            additionalImports = ${formatStringList(meta.additionalImports)},")
             builder.appendLine("            targets = ${formatStringList(meta.targets)},")
+            builder.appendLine("            screenshotHarnessFactoryFqn = \"${escape(meta.screenshotHarnessFactoryFqn)}\",")
+            builder.appendLine("            screenshotTestPackage = \"${escape(meta.screenshotTestPackage)}\",")
+            builder.appendLine("            screenshotTestClassName = \"${escape(meta.screenshotTestClassName)}\",")
             builder.appendLine("        ),")
         }
 
@@ -320,6 +332,9 @@ class StateProofProcessor(
         val stateMachineFactory: String,
         val additionalImports: List<String>,
         val targets: List<String>,
+        val screenshotHarnessFactoryFqn: String,
+        val screenshotTestPackage: String,
+        val screenshotTestClassName: String,
         val containingFile: com.google.devtools.ksp.symbol.KSFile?,
     )
 

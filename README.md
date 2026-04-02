@@ -786,21 +786,34 @@ stateproof {
 }
 ```
 
-For Kotlin Multiplatform screen-flow projects, prefer a JVM/desktop generated-test target:
+For Kotlin Multiplatform screen-flow projects, keep generated path tests on a JVM test target:
 
 ```kotlin
 stateproof {
-    testDir.set(layout.projectDirectory.dir("src/desktopTest/kotlin/generated/stateproof"))
+    testDir.set(layout.projectDirectory.dir("src/test/kotlin/generated/stateproof"))
 }
 ```
 
-Keep `commonTest` for platform-agnostic logic tests; use `desktopTest` as default generated path/screenshot baseline target.
+Keep `commonTest` for platform-agnostic logic tests, and use JVM/Android unit tests for generated path and screenshot suites.
 
 If you use viewer tasks, add the viewer artifact to your test/runtime classpath:
 
 ```kotlin
 dependencies {
     testImplementation("io.github.fshamim:stateproof-viewer-jvm:0.8.0-alpha02")
+}
+```
+
+For screenshot generation (Android/Paparazzi MVP), add:
+
+```kotlin
+plugins {
+    id("app.cash.paparazzi") version "1.3.2"
+}
+
+dependencies {
+    testImplementation("io.github.fshamim:stateproof-screenshot-jvm:0.8.0-alpha02")
+    testImplementation("app.cash.paparazzi:paparazzi:1.3.2")
 }
 ```
 
@@ -819,6 +832,11 @@ dependencies {
 | `stateproofViewer` | Generate interactive viewer (single mode or alias to all) |
 | `stateproofViewer<Name>` | Generate interactive viewer for a specific state machine (multi mode) |
 | `stateproofViewerAll` | Generate interactive viewers for all state machines |
+| `stateproofScreenshotsSync` | Sync generated screenshot tests (single mode or alias to all) |
+| `stateproofScreenshotsSync<Name>` | Sync screenshot tests for a specific state machine (multi mode) |
+| `stateproofScreenshotsSyncAll` | Sync screenshot tests for all screenshot-enabled state machines |
+| `stateproofScreenshotsRecord` | Sync screenshot tests then run Paparazzi record task |
+| `stateproofScreenshotsVerify` | Sync screenshot tests then run Paparazzi verify task |
 | `stateproofScan` | Generate project profile JSON for AI-assisted integration |
 | `stateproofWatch` | Watch configured paths and trigger sync/diagram/viewer actions |
 
@@ -843,7 +861,7 @@ androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 - `docs/launch/launch-day-checklist.md` - operational launch checklist
 - `docs/launch/announcement-draft.md` - announcement starter copy
 
-> Launch payload execution is deferred until Screenshot Testing MVP (Sprint 8 launch gate) is complete.
+> Screenshot Testing MVP (Sprint 8 launch gate) is complete; launch payload execution can proceed.
 > Planning pointer: [Tasks.md](Tasks.md) (canonical tracker is maintained in the private integration workspace).
 
 ## Roadmap (Planned)
@@ -861,6 +879,7 @@ These items are planned next and intentionally not treated as current guarantees
 - `stateproof-navigation` - Jetpack Navigation integration (coming soon)
 - `stateproof-gradle-plugin` - Gradle plugin for test, diagram, and viewer generation
 - `stateproof-viewer` - Interactive state graph viewer generator (JVM-first)
+- `stateproof-screenshot` - Android/Paparazzi screenshot test generation and sync (JVM tooling)
 
 ## License
 

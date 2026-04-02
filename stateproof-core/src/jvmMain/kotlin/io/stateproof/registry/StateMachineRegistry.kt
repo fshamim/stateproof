@@ -18,6 +18,9 @@ data class StateMachineDescriptor(
     val stateMachineFactory: String = "",
     val additionalImports: List<String> = emptyList(),
     val targets: List<String> = listOf("jvm", "android"),
+    val screenshotHarnessFactoryFqn: String = "",
+    val screenshotTestPackage: String = "",
+    val screenshotTestClassName: String = "",
 )
 
 /**

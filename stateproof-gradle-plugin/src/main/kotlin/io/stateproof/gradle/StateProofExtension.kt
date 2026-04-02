@@ -71,6 +71,9 @@ abstract class StateProofExtension(private val project: Project) {
                 eventClassPrefix.convention("Events")
                 additionalImports.convention(emptyList<String>())
                 testTargets.convention(listOf("jvm"))
+                screenshotHarnessFactoryFqn.convention("")
+                screenshotTestPackage.convention("")
+                screenshotTestClassName.convention("")
                 androidTestClassName.convention("")  // Will be derived
                 androidAdditionalImports.convention(listOf(
                     "androidx.test.ext.junit.runners.AndroidJUnit4",
@@ -217,6 +220,42 @@ abstract class StateProofExtension(private val project: Project) {
     abstract val viewerIncludeJsonSidecar: Property<Boolean>
 
     /**
+     * Directory where generated screenshot tests will be written.
+     * Default: src/test/kotlin/generated/stateproof/screenshots
+     */
+    abstract val screenshotTestDir: DirectoryProperty
+
+    /**
+     * Screenshot harness factory FQN for single-mode screenshot generation.
+     * Format: "com.package.FileKt#createHarness"
+     */
+    abstract val screenshotHarnessFactoryFqn: Property<String>
+
+    /**
+     * Screenshot capture mode.
+     * Default: movie
+     */
+    abstract val screenshotCaptureMode: Property<String>
+
+    /**
+     * Whether screenshot sync should fail when harness config is missing.
+     * Default: true
+     */
+    abstract val screenshotStrict: Property<Boolean>
+
+    /**
+     * Paparazzi record task name.
+     * Default: recordPaparazziDebug
+     */
+    abstract val screenshotRecordTaskName: Property<String>
+
+    /**
+     * Paparazzi verify task name.
+     * Default: verifyPaparazziDebug
+     */
+    abstract val screenshotVerifyTaskName: Property<String>
+
+    /**
      * Output file for agent project scan report.
      * Default: build/stateproof/agent/project-scan.json
      */
@@ -293,6 +332,14 @@ abstract class StateProofExtension(private val project: Project) {
         viewerOutputDir.convention(project.layout.buildDirectory.dir("stateproof/viewer"))
         viewerLayout.convention("breadthfirst")
         viewerIncludeJsonSidecar.convention(true)
+        screenshotTestDir.convention(
+            project.layout.projectDirectory.dir("src/test/kotlin/generated/stateproof/screenshots")
+        )
+        screenshotHarnessFactoryFqn.convention("")
+        screenshotCaptureMode.convention("movie")
+        screenshotStrict.convention(true)
+        screenshotRecordTaskName.convention("recordPaparazziDebug")
+        screenshotVerifyTaskName.convention("verifyPaparazziDebug")
         agentScanOutputFile.convention(project.layout.buildDirectory.file("stateproof/agent/project-scan.json"))
         watchMode.convention("all")
         watchDebounceMs.convention(1200L)
